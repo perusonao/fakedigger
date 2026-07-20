@@ -36,28 +36,37 @@
   .rowsel button{flex:1;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-weight:700}
   .rowsel button.on{background:var(--accent);color:#04212f;border-color:var(--accent)}
 
-  /* ===== single-screen game layout (no page scroll) ===== */
-  #game{position:fixed;inset:0;display:flex;flex-direction:column;gap:7px;padding:8px 10px;
+  /* ===== single-screen game layout (auto-scaled to fit any viewport) ===== */
+  #game{position:fixed;inset:0;overflow:hidden;display:flex;flex-direction:column;
+    justify-content:flex-start;align-items:center;padding:6px;
     background:linear-gradient(160deg,#0b1620,#12283a)}
-  .topbar{flex:0 0 auto;display:flex;align-items:center;gap:10px}
+  #stage{width:100%;max-width:1180px;display:flex;flex-direction:column;gap:7px;transform-origin:top center}
+  .topbar{display:flex;align-items:center;gap:10px}
   .topbar h1{font-size:19px;letter-spacing:1px}
   .topbar .sub{color:var(--muted);font-size:11px}
-  .banner{flex:0 0 auto;background:var(--panel);border:1px solid var(--accent2);border-radius:9px;
+  .banner{background:var(--panel);border:1px solid var(--accent2);border-radius:9px;
     padding:6px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px}
   .banner .msg{font-weight:700;font-size:14px}
   .banner .hintmsg{color:var(--muted);font-size:12px}
 
-  .board{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1fr 250px;gap:8px}
+  .board{display:grid;grid-template-columns:1fr 250px;gap:8px;align-items:stretch}
   .col{display:flex;flex-direction:column;gap:8px;min-height:0}
-  .card-box{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:9px;min-height:0}
+  .card-box{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:9px}
   .card-box h3{font-size:12px;color:var(--accent);margin-bottom:6px;letter-spacing:.5px}
   .box-piles{flex:1 1 auto;display:flex;flex-direction:column}
-  .box-strats{flex:0 0 auto}
-  .box-players{flex:0 0 auto}
   .box-log{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
 
+  /* narrow / portrait: single column so it reflows before scaling */
+  @media(max-width:820px){
+    .board{grid-template-columns:1fr}
+    .topbar{display:none}
+    .players{flex-direction:row;flex-wrap:wrap}
+    .pl{flex:1 1 46%}
+    .strat .sdesc{display:none}
+  }
+
   /* ===== piles: every card back (DAI) visible, stacked (HSM) ===== */
-  .piles{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:repeat(8,1fr);gap:6px;align-content:start}
+  .piles{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;align-content:start}
   @media(max-width:820px){.piles{grid-template-columns:repeat(4,1fr)}}
   .pile{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 4px 6px;transition:.12s}
   .pile.selectable{cursor:pointer;border-color:var(--accent);box-shadow:0 0 0 2px rgba(62,160,216,.3)}
@@ -112,7 +121,7 @@
   .worker-dot{display:inline-block;width:11px;height:11px;border-radius:50%;background:var(--accent);margin-left:3px}
   .worker-dot.spent{background:#3a5165}
 
-  .log{flex:1 1 auto;min-height:0;background:#0c1a26;border:1px solid var(--line);border-radius:8px;padding:7px;
+  .log{flex:1 1 auto;min-height:84px;background:#0c1a26;border:1px solid var(--line);border-radius:8px;padding:7px;
     overflow-y:auto;font-size:11px;line-height:1.55}
   .log .me{color:var(--accent)} .log .ai{color:var(--accent2)} .log .sys{color:var(--muted)}
 
@@ -153,6 +162,7 @@
 
   <!-- GAME SCREEN -->
   <div id="game" style="display:none">
+   <div id="stage">
     <div class="topbar">
       <h1>FakeDigger</h1>
       <span class="sub">宝石発掘バトル・デジタル版</span>
@@ -183,6 +193,7 @@
         </div>
       </div>
     </div>
+   </div>
   </div>
 </div>
 
@@ -660,7 +671,27 @@ function render(){
   }
 
   renderPiles(); renderStrats(); renderPlayers(); renderLog();
+  fitStage();
 }
+
+// Scale the whole board down so it always fits the viewport (no page scroll, any device).
+function fitStage(){
+  const game=el("game"); if(!game || game.style.display==="none") return;
+  const stage=el("stage"); if(!stage) return;
+  stage.style.transform="none";
+  const natural=stage.scrollHeight;      // content height, independent of position
+  if(natural<=0) return;
+  const avail=window.innerHeight-12;      // 6px top + 6px bottom breathing room
+  if(natural<=avail){
+    // already fits — center it vertically
+    const ty=Math.round((avail-natural)/2);
+    stage.style.transform = ty>0 ? "translateY("+ty+"px)" : "none";
+  }else{
+    // too tall — scale down from the top so it fits exactly
+    stage.style.transform = "scale("+(avail/natural).toFixed(4)+")";
+  }
+}
+window.addEventListener("resize", fitStage);
 
 function sliceHTML(c,isFront){
   // one card in a pile, viewed from the back — DAI hint (possible colors) always visible.
