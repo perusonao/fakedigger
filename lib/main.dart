@@ -25,6 +25,66 @@ const gold = Color(0xffc69a45);
 const parchment = Color(0xffe5d5ad);
 const teal = Color(0xff72e1c1);
 
+/// プレイヤーの立ち絵（画像があれば画像、なければ文字）を丸く表示する。
+Widget playerAvatar(PlayerState p, double radius) => CircleAvatar(
+      radius: radius,
+      backgroundColor: p.color,
+      foregroundImage: p.image == null ? null : AssetImage(p.image!),
+      child: Text(p.avatar),
+    );
+
+/// 画面レイアウト。null（未設定）のときは画面の縦横比から自動判定する。
+enum AppLayout { landscape, portrait }
+
+final layoutProvider = StateProvider<AppLayout?>((ref) => null);
+
+/// 明示指定があればそれを、なければ画面比から自動でレイアウトを決める。
+AppLayout effectiveLayout(BuildContext context, WidgetRef ref) =>
+    ref.watch(layoutProvider) ??
+    (MediaQuery.of(context).size.aspectRatio < 1
+        ? AppLayout.portrait
+        : AppLayout.landscape);
+
+/// 縦・横レイアウトを手動で切り替える（コールバックから呼ぶため watch は使わない）。
+void toggleLayout(BuildContext context, WidgetRef ref) {
+  final auto = MediaQuery.of(context).size.aspectRatio < 1
+      ? AppLayout.portrait
+      : AppLayout.landscape;
+  final current = ref.read(layoutProvider) ?? auto;
+  ref.read(layoutProvider.notifier).state =
+      current == AppLayout.portrait ? AppLayout.landscape : AppLayout.portrait;
+}
+
+/// ヘッダー右側の操作アイコン（レイアウト切替・手札・ログ・設定）。
+List<Widget> headerActions(BuildContext context, WidgetRef ref) {
+  final portrait = effectiveLayout(context, ref) == AppLayout.portrait;
+  return [
+    IconButton(
+      tooltip: portrait ? '横レイアウトに切替' : '縦レイアウトに切替',
+      onPressed: () => toggleLayout(context, ref),
+      icon: Icon(
+        portrait ? Icons.stay_current_landscape : Icons.stay_current_portrait,
+        color: gold,
+      ),
+    ),
+    IconButton(
+      tooltip: 'あなたの手札',
+      onPressed: () => showHandSheet(context, ref),
+      icon: const Icon(Icons.style, color: gold),
+    ),
+    const IconButton(
+      tooltip: 'ログ',
+      onPressed: null,
+      icon: Icon(Icons.receipt_long, color: gold),
+    ),
+    const IconButton(
+      tooltip: '設定',
+      onPressed: null,
+      icon: Icon(Icons.settings, color: gold),
+    ),
+  ];
+}
+
 class FakeDiggerApp extends ConsumerWidget {
   const FakeDiggerApp({super.key});
   @override
@@ -56,21 +116,12 @@ class GameScreen extends ConsumerWidget {
       if (next && prev != true) _showResult(context, ref);
     });
 
+    final portrait = effectiveLayout(context, ref) == AppLayout.portrait;
     return Scaffold(
+      backgroundColor: ink,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: const [
-              Header(),
-              SizedBox(height: 8),
-              Expanded(flex: 55, child: MiddleRow()),
-              SizedBox(height: 8),
-              Expanded(flex: 33, child: StrategySection()),
-            ],
-          ),
-        ),
+        child:
+            portrait ? const PortraitDashboard() : const LandscapeDashboard(),
       ),
     );
   }
@@ -119,14 +170,7 @@ class GameScreen extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    CircleAvatar(
-                      radius: 14,
-                      backgroundColor: row.player.color,
-                      child: Text(
-                        row.player.avatar,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
+                    playerAvatar(row.player, 14),
                     const SizedBox(width: 8),
                     Expanded(child: Text(row.player.name)),
                     Text(
@@ -149,6 +193,176 @@ class GameScreen extends ConsumerWidget {
               Navigator.pop(context);
             },
             child: const Text('もう一度あそぶ'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 横（ランドスケープ）レイアウト。横長構成を固定基準サイズで作り、
+/// 画面に合わせて等比縮小するので、どの画面でもモック通りの配置を保つ。
+class LandscapeDashboard extends StatelessWidget {
+  const LandscapeDashboard({super.key});
+  @override
+  Widget build(BuildContext context) => Center(
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: SizedBox(
+            width: 1280,
+            height: 840,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: const [
+                  Header(),
+                  SizedBox(height: 8),
+                  Expanded(flex: 55, child: MiddleRow()),
+                  SizedBox(height: 8),
+                  Expanded(flex: 33, child: StrategySection()),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
+/// 縦（ポートレート）レイアウト。上部ヘッダー＋縦スクロールで、
+/// 各パネル・山札(2列)・戦略カード(2列)を積み上げる。
+class PortraitDashboard extends ConsumerWidget {
+  const PortraitDashboard({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(gameProvider);
+    final canDig =
+        !state.isOver && state.players[state.currentPlayer].workers > 0;
+    Widget sectionTitle(String t) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Text(
+            t,
+            textAlign: TextAlign.center,
+            style:
+                const TextStyle(color: parchment, fontWeight: FontWeight.bold),
+          ),
+        );
+    return Column(
+      children: [
+        const PortraitHeader(),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const GoldPanel(child: RoundPanel()),
+                const SizedBox(height: 8),
+                const GoldPanel(child: TargetPanel()),
+                const SizedBox(height: 8),
+                GoldPanel(
+                  child: Column(
+                    children: [
+                      sectionTitle('—  山札エリア（DAIが見える） —'),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 1.5,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 16,
+                        ),
+                        itemCount: state.decks.length,
+                        itemBuilder: (_, i) => DeckCard(
+                          index: i,
+                          deck: state.decks[i],
+                          canDig: canDig,
+                          crownColor: state.decks[i].monopolizedBy == null
+                              ? null
+                              : state
+                                  .players[state.decks[i].monopolizedBy!].color,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                GoldPanel(
+                  child: Column(
+                    children: [
+                      sectionTitle('—  戦略カード（現在は発掘のみ実装） —'),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 1.35,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                        ),
+                        itemCount: StrategySection.actions.length,
+                        itemBuilder: (_, i) => ActionCard(
+                          index: i,
+                          data: StrategySection.actions[i],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 縦レイアウト用のコンパクトなヘッダー（ロゴ＋操作アイコン、下に相手チップ）。
+class PortraitHeader extends ConsumerWidget {
+  const PortraitHeader({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final players = ref.watch(gameProvider.select((s) => s.players));
+    final current = ref.watch(gameProvider.select((s) => s.currentPlayer));
+    return Container(
+      margin: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xff050a0d),
+        border: Border.all(color: gold),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Text(
+                'FakeDigger',
+                style: TextStyle(
+                  color: Color(0xffffd277),
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              ...headerActions(context, ref),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              for (var i = 1; i < players.length; i++)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: PlayerChip(player: players[i], active: current == i),
+                  ),
+                ),
+            ],
           ),
         ],
       ),
@@ -301,21 +515,7 @@ class Header extends ConsumerWidget {
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'あなたの手札',
-            onPressed: () => showHandSheet(context, ref),
-            icon: const Icon(Icons.style, color: gold),
-          ),
-          const IconButton(
-            tooltip: 'ログ',
-            onPressed: null,
-            icon: Icon(Icons.receipt_long, color: gold),
-          ),
-          const IconButton(
-            tooltip: '設定',
-            onPressed: null,
-            icon: Icon(Icons.settings, color: gold),
-          ),
+          ...headerActions(context, ref),
         ],
       ),
     );
@@ -342,11 +542,7 @@ class PlayerChip extends StatelessWidget {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: player.color,
-                  child: Text(player.avatar),
-                ),
+                playerAvatar(player, 16),
                 if (player.role != null)
                   Positioned(
                     left: -4,
@@ -513,8 +709,7 @@ class RoundPanel extends ConsumerWidget {
         const SizedBox(height: 6),
         Row(
           children: [
-            CircleAvatar(
-                backgroundColor: start.color, child: Text(start.avatar)),
+            playerAvatar(start, 20),
             const SizedBox(width: 8),
             Text(start.name),
           ],
@@ -721,8 +916,11 @@ class TargetPanel extends ConsumerWidget {
             border: Border.all(color: gold, width: 4),
             borderRadius: BorderRadius.circular(8),
           ),
-          child:
-              Center(child: Icon(Icons.diamond, size: 60, color: target.color)),
+          clipBehavior: Clip.antiAlias,
+          child: target == Gem.blue
+              ? Image.asset('assets/img/gem_blue.png', fit: BoxFit.cover)
+              : Center(
+                  child: Icon(Icons.diamond, size: 60, color: target.color)),
         ),
         const SizedBox(height: 8),
         Text('${target.label} +3点 / 白 +1点 / 黒 -2点',
@@ -771,8 +969,9 @@ class TargetPanel extends ConsumerWidget {
 }
 
 class ActionData {
-  const ActionData(this.title, this.icon, this.cost, this.description);
-  final String title, description;
+  const ActionData(
+      this.title, this.icon, this.cost, this.description, this.image);
+  final String title, description, image;
   final IconData icon;
   final int cost;
 }
@@ -780,16 +979,26 @@ class ActionData {
 class StrategySection extends StatelessWidget {
   const StrategySection({super.key});
   static const actions = [
-    ActionData('発掘', Icons.hardware, 1, '山札の1番上のカードを手札に加える'),
-    ActionData('鑑定', Icons.search, 1, '他プレイヤーの宝石カード1枚を見る'),
-    ActionData('調査', Icons.visibility, 1, '任意の山札のすべてのカードを見る'),
-    ActionData('整地', Icons.grass, 1, '任意の山札2つを1〜5枚ずつに作り変える'),
-    ActionData('埋葬', Icons.south, 1, '手札のカード1枚を山札の1番上に置く'),
-    ActionData('強奪', Icons.pan_tool, 2, '他プレイヤーの宝石を自分の手札にする'),
-    ActionData('独占', Icons.workspace_premium, 1, '任意の山札を効果の対象外にする'),
-    ActionData('捏造', Icons.swap_horiz, 2, '手札と山札のカードを交換する'),
-    ActionData('保護', Icons.shield, 1, '手札を任意の枚数、効果対象外にする'),
-    ActionData('取引', Icons.handshake, 2, '他プレイヤーとカードを1枚ずつ交換'),
+    ActionData(
+        '発掘', Icons.hardware, 1, '山札の1番上のカードを手札に加える', 'assets/img/act_dig.png'),
+    ActionData('鑑定', Icons.search, 1, '他プレイヤーの宝石カード1枚を見る',
+        'assets/img/act_appraise.png'),
+    ActionData('調査', Icons.visibility, 1, '任意の山札のすべてのカードを見る',
+        'assets/img/act_investigate.png'),
+    ActionData('整地', Icons.grass, 1, '任意の山札2つを1〜5枚ずつに作り変える',
+        'assets/img/act_level.png'),
+    ActionData(
+        '埋葬', Icons.south, 1, '手札のカード1枚を山札の1番上に置く', 'assets/img/act_bury.png'),
+    ActionData('強奪', Icons.pan_tool, 2, '他プレイヤーの宝石を自分の手札にする',
+        'assets/img/act_rob.png'),
+    ActionData('独占', Icons.workspace_premium, 1, '任意の山札を効果の対象外にする',
+        'assets/img/act_monopoly.png'),
+    ActionData('捏造', Icons.swap_horiz, 2, '手札と山札のカードを交換する',
+        'assets/img/act_fabricate.png'),
+    ActionData('保護', Icons.shield, 1, '手札を任意の枚数、効果対象外にする',
+        'assets/img/act_protect.png'),
+    ActionData('取引', Icons.handshake, 2, '他プレイヤーとカードを1枚ずつ交換',
+        'assets/img/act_trade.png'),
   ];
   @override
   Widget build(BuildContext context) => GoldPanel(
@@ -882,13 +1091,9 @@ class ActionCard extends ConsumerWidget {
                 ),
                 Expanded(
                   child: Center(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Icon(
-                        data.icon,
-                        size: 40,
-                        color: implemented ? gold : parchment,
-                      ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Image.asset(data.image, fit: BoxFit.contain),
                     ),
                   ),
                 ),
