@@ -4,17 +4,35 @@ import 'package:go_router/go_router.dart';
 
 void main() => runApp(const ProviderScope(child: FakeDiggerApp()));
 
-final routerProvider = Provider<GoRouter>((ref) => GoRouter(
-      initialLocation: '/',
-      routes: [GoRoute(path: '/', builder: (_, __) => const GameScreen())],
-    ));
+final routerProvider = Provider<GoRouter>(
+  (ref) => GoRouter(
+    initialLocation: '/',
+    routes: [GoRoute(path: '/', builder: (_, __) => const GameScreen())],
+  ),
+);
 
 class Player {
-  const Player(this.name, this.color, this.cards, this.avatar);
+  const Player(
+    this.name,
+    this.color,
+    this.cards,
+    this.avatar,
+    this.vp, {
+    this.role,
+  });
   final String name;
   final Color color;
   final int cards;
   final String avatar;
+  final int vp;
+  final String? role;
+}
+
+class HandCard {
+  const HandCard(this.color, this.value, {this.faceDownOnly = false});
+  final Color color;
+  final int value;
+  final bool faceDownOnly;
 }
 
 class MineDeck {
@@ -26,7 +44,10 @@ class MineDeck {
 
 final selectedDeckProvider = StateProvider<int?>((ref) => null);
 final selectedActionProvider = StateProvider<int?>((ref) => null);
-final memoProvider = StateProvider<String>((ref) => '① 赤 ×　青 ?　黒 ○\n② 赤 ○　青 ?　白 ?\n③ 黄 ?　黒 ○\n④ 青 ?　白 ○');
+final revealedHandProvider = StateProvider<Set<int>>((ref) => <int>{});
+final memoProvider = StateProvider<String>(
+  (ref) => '① 赤 ×　青 ?　黒 ○\n② 赤 ○　青 ?　白 ?\n③ 黄 ?　黒 ○\n④ 青 ?　白 ○',
+);
 
 const ink = Color(0xff071117);
 const panel = Color(0xff0d1a22);
@@ -42,7 +63,10 @@ class FakeDiggerApp extends ConsumerWidget {
         theme: ThemeData(
           brightness: Brightness.dark,
           scaffoldBackgroundColor: ink,
-          colorScheme: ColorScheme.fromSeed(seedColor: gold, brightness: Brightness.dark),
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: gold,
+            brightness: Brightness.dark,
+          ),
           fontFamily: 'serif',
           useMaterial3: true,
         ),
@@ -53,9 +77,9 @@ class FakeDiggerApp extends ConsumerWidget {
 class GameScreen extends StatelessWidget {
   const GameScreen({super.key});
   static const players = [
-    Player('ゼファ', Color(0xff46aee8), 4, '⚔'),
-    Player('ノクス', Color(0xff76688e), 3, '☾'),
-    Player('ミア', Color(0xffe5ad54), 5, '✦'),
+    Player('ゼファ', Color(0xff46aee8), 4, '⚔', 12, role: 'YP'),
+    Player('ノクス', Color(0xff76688e), 3, '☾', 8),
+    Player('ミア', Color(0xffe5ad54), 5, '✦', 7, role: 'YP'),
   ];
   static const decks = [
     MineDeck(1, [Colors.black, Colors.white]),
@@ -71,29 +95,45 @@ class GameScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
         body: SafeArea(
-          child: LayoutBuilder(builder: (context, box) {
-            final compact = box.maxWidth < 900;
-            return CustomScrollView(slivers: [
-              SliverToBoxAdapter(child: Header(players: players)),
-              SliverPadding(
-                padding: const EdgeInsets.all(12),
-                sliver: SliverToBoxAdapter(
-                  child: compact
-                      ? const Column(children: [RoundPanel(), SizedBox(height: 12), MineBoard(decks: decks), SizedBox(height: 12), TargetPanel()])
-                      : const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          SizedBox(width: 165, child: RoundPanel()),
-                          SizedBox(width: 12),
-                          Expanded(child: MineBoard(decks: decks)),
-                          SizedBox(width: 12),
-                          SizedBox(width: 180, child: TargetPanel()),
-                        ]),
-                ),
-              ),
-              const SliverToBoxAdapter(child: StrategySection()),
-              const SliverToBoxAdapter(child: HelpSection()),
-              const SliverToBoxAdapter(child: SizedBox(height: 28)),
-            ]);
-          }),
+          child: LayoutBuilder(
+            builder: (context, box) {
+              final compact = box.maxWidth < 900;
+              return CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(child: Header(players: players)),
+                  SliverPadding(
+                    padding: const EdgeInsets.all(12),
+                    sliver: SliverToBoxAdapter(
+                      child: compact
+                          ? const Column(
+                              children: [
+                                RoundPanel(),
+                                SizedBox(height: 12),
+                                MineBoard(decks: decks),
+                                SizedBox(height: 12),
+                                TargetPanel(),
+                              ],
+                            )
+                          : const Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(width: 165, child: RoundPanel()),
+                                SizedBox(width: 12),
+                                Expanded(child: MineBoard(decks: decks)),
+                                SizedBox(width: 12),
+                                SizedBox(width: 180, child: TargetPanel()),
+                              ],
+                            ),
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: HandSection()),
+                  const SliverToBoxAdapter(child: StrategySection()),
+                  const SliverToBoxAdapter(child: HelpSection()),
+                  const SliverToBoxAdapter(child: SizedBox(height: 28)),
+                ],
+              );
+            },
+          ),
         ),
       );
 }
@@ -104,16 +144,48 @@ class Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        decoration: const BoxDecoration(color: Color(0xff050a0d), border: Border(bottom: BorderSide(color: gold))),
-        child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 14, runSpacing: 8, children: [
-          const SizedBox(width: 180, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('FakeDigger', style: TextStyle(color: Color(0xffffd277), fontSize: 28, fontWeight: FontWeight.bold)),
-            Text('フェイクディガー', style: TextStyle(color: parchment, fontSize: 11)),
-          ])),
-          ...players.map((p) => PlayerChip(player: p)),
-          const IconButton(tooltip: 'ログ', onPressed: null, icon: Icon(Icons.receipt_long, color: gold)),
-          const IconButton(tooltip: '設定', onPressed: null, icon: Icon(Icons.settings, color: gold)),
-        ]),
+        decoration: const BoxDecoration(
+          color: Color(0xff050a0d),
+          border: Border(bottom: BorderSide(color: gold)),
+        ),
+        child: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 14,
+          runSpacing: 8,
+          children: [
+            const SizedBox(
+              width: 180,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'FakeDigger',
+                    style: TextStyle(
+                      color: Color(0xffffd277),
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'フェイクディガー',
+                    style: TextStyle(color: parchment, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            ...players.map((p) => PlayerChip(player: p)),
+            const IconButton(
+              tooltip: 'ログ',
+              onPressed: null,
+              icon: Icon(Icons.receipt_long, color: gold),
+            ),
+            const IconButton(
+              tooltip: '設定',
+              onPressed: null,
+              icon: Icon(Icons.settings, color: gold),
+            ),
+          ],
+        ),
       );
 }
 
@@ -122,26 +194,104 @@ class PlayerChip extends StatelessWidget {
   final Player player;
   @override
   Widget build(BuildContext context) => Container(
-        width: 185,
+        width: 205,
         padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(color: panel, border: Border.all(color: gold), borderRadius: BorderRadius.circular(8)),
-        child: Row(children: [
-          CircleAvatar(backgroundColor: player.color, child: Text(player.avatar)),
-          const SizedBox(width: 8),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(player.name, style: const TextStyle(fontWeight: FontWeight.bold)), Text('手札 ${player.cards}枚', style: const TextStyle(color: parchment))])),
-          const Icon(Icons.style, color: Color(0xff7187a3)),
-        ]),
+        decoration: BoxDecoration(
+          color: panel,
+          border: Border.all(color: gold),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CircleAvatar(
+                  backgroundColor: player.color,
+                  child: Text(player.avatar),
+                ),
+                if (player.role != null)
+                  Positioned(
+                    left: -4,
+                    bottom: -4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: ink,
+                        border: Border.all(color: gold),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        player.role!,
+                        style: const TextStyle(
+                          color: gold,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    player.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    '手札 ${player.cards}枚',
+                    style: const TextStyle(color: parchment),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.style, color: Color(0xff7187a3)),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                color: ink,
+                border: Border.all(color: gold),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                'VP ${player.vp}',
+                style: const TextStyle(
+                  color: gold,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
       );
 }
 
 class GoldPanel extends StatelessWidget {
-  const GoldPanel({required this.child, this.padding = const EdgeInsets.all(12), super.key});
+  const GoldPanel({
+    required this.child,
+    this.padding = const EdgeInsets.all(12),
+    super.key,
+  });
   final Widget child;
   final EdgeInsets padding;
   @override
   Widget build(BuildContext context) => Container(
         padding: padding,
-        decoration: BoxDecoration(color: panel, border: Border.all(color: gold), borderRadius: BorderRadius.circular(6), boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 8)]),
+        decoration: BoxDecoration(
+          color: panel,
+          border: Border.all(color: gold),
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 8)],
+        ),
         child: child,
       );
 }
@@ -149,41 +299,76 @@ class GoldPanel extends StatelessWidget {
 class RoundPanel extends StatelessWidget {
   const RoundPanel({super.key});
   @override
-  Widget build(BuildContext context) => GoldPanel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        const Text('ラウンド  3 / ∞', style: TextStyle(fontWeight: FontWeight.bold)),
-        const Divider(color: gold),
-        const Text('あなたの番です', textAlign: TextAlign.center, style: TextStyle(color: Color(0xff72e1c1), fontWeight: FontWeight.bold)),
-        const SizedBox(height: 25),
-        const Text('スタートプレイヤー'),
-        const SizedBox(height: 8),
-        const Row(children: [CircleAvatar(backgroundColor: Color(0xffd86c77), child: Text('♛')), SizedBox(width: 8), Text('アルル')]),
-        const Divider(height: 35),
-        const Text('ワーカー'),
-        const SizedBox(height: 8),
-        const Text('⛏   ⛏', style: TextStyle(fontSize: 28, color: gold)),
-        const Divider(height: 35),
-        const Text('独占チップ'),
-        const Text('♛', style: TextStyle(fontSize: 28, color: Colors.amber)),
-        const SizedBox(height: 22),
-        OutlinedButton(onPressed: () {}, child: const Text('?  DAI早見表')),
-      ]));
+  Widget build(BuildContext context) => GoldPanel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'ラウンド  3 / ∞',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const Divider(color: gold),
+            const Text(
+              'あなたの番です',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xff72e1c1),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 25),
+            const Text('スタートプレイヤー'),
+            const SizedBox(height: 8),
+            const Row(
+              children: [
+                CircleAvatar(
+                    backgroundColor: Color(0xffd86c77), child: Text('♛')),
+                SizedBox(width: 8),
+                Text('アルル'),
+              ],
+            ),
+            const Divider(height: 35),
+            const Text('ワーカー'),
+            const SizedBox(height: 8),
+            const Text('⛏   ⛏', style: TextStyle(fontSize: 28, color: gold)),
+            const Divider(height: 35),
+            const Text('独占チップ'),
+            const Text('♛',
+                style: TextStyle(fontSize: 28, color: Colors.amber)),
+            const SizedBox(height: 22),
+            OutlinedButton(onPressed: () {}, child: const Text('?  DAI早見表')),
+          ],
+        ),
+      );
 }
 
 class MineBoard extends StatelessWidget {
   const MineBoard({required this.decks, super.key});
   final List<MineDeck> decks;
   @override
-  Widget build(BuildContext context) => GoldPanel(child: Column(children: [
-        const Text('—  山札エリア（DAIが見える） —', style: TextStyle(color: parchment, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 14),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 155, childAspectRatio: .72, crossAxisSpacing: 16, mainAxisSpacing: 18),
-          itemCount: decks.length,
-          itemBuilder: (_, i) => DeckCard(deck: decks[i]),
+  Widget build(BuildContext context) => GoldPanel(
+        child: Column(
+          children: [
+            const Text(
+              '—  山札エリア（DAIが見える） —',
+              style: TextStyle(color: parchment, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 14),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 155,
+                childAspectRatio: .72,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 18,
+              ),
+              itemCount: decks.length,
+              itemBuilder: (_, i) => DeckCard(deck: decks[i]),
+            ),
+          ],
         ),
-      ]));
+      );
 }
 
 class DeckCard extends ConsumerWidget {
@@ -192,56 +377,306 @@ class DeckCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(selectedDeckProvider) == deck.id;
-    return Semantics(button: true, selected: selected, label: '山札${deck.id}、5枚', child: InkWell(
-      onTap: () => ref.read(selectedDeckProvider.notifier).state = deck.id,
-      borderRadius: BorderRadius.circular(8),
-      child: Stack(clipBehavior: Clip.none, children: [
-        Positioned(left: 6, right: -6, top: 10, bottom: -8, child: DecoratedBox(decoration: BoxDecoration(color: const Color(0xff766b59), borderRadius: BorderRadius.circular(7), border: Border.all(color: Colors.black)))),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: parchment, borderRadius: BorderRadius.circular(7), border: Border.all(color: selected ? Colors.cyanAccent : const Color(0xff695b42), width: selected ? 3 : 2), boxShadow: const [BoxShadow(color: Colors.black87, blurRadius: 6)]),
-          child: Column(children: [
-            CircleAvatar(radius: 16, backgroundColor: const Color(0xff6a5e49), child: Text('${deck.id}', style: const TextStyle(color: Colors.white, fontSize: 20))),
-            const Divider(color: Color(0xff8a7754)),
-            Expanded(child: Center(child: Wrap(spacing: 3, children: deck.gems.map((c) => Container(width: 19, height: 19, decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: Colors.black)))).toList()))),
-            const Text('5枚', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
-          ]),
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '山札${deck.id}、5枚',
+      child: InkWell(
+        onTap: () => ref.read(selectedDeckProvider.notifier).state = deck.id,
+        borderRadius: BorderRadius.circular(8),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: 6,
+              right: -6,
+              top: 10,
+              bottom: -8,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xff766b59),
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(color: Colors.black),
+                ),
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: parchment,
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(
+                  color: selected ? Colors.cyanAccent : const Color(0xff695b42),
+                  width: selected ? 3 : 2,
+                ),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black87, blurRadius: 6),
+                ],
+              ),
+              child: Column(
+                children: [
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: const Color(0xff6a5e49),
+                    child: Text(
+                      '${deck.id}',
+                      style: const TextStyle(color: Colors.white, fontSize: 20),
+                    ),
+                  ),
+                  const Divider(color: Color(0xff8a7754)),
+                  Expanded(
+                    child: Center(
+                      child: Wrap(
+                        spacing: 3,
+                        children: deck.gems
+                            .map(
+                              (c) => Container(
+                                width: 19,
+                                height: 19,
+                                decoration: BoxDecoration(
+                                  color: c,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.black),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ),
+                  const Text(
+                    '5枚',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (deck.crown != null)
+              Positioned(
+                right: -7,
+                top: -16,
+                child: Text(
+                  '♛',
+                  style: TextStyle(fontSize: 36, color: deck.crown),
+                ),
+              ),
+          ],
         ),
-        if (deck.crown != null) Positioned(right: -7, top: -16, child: Text('♛', style: TextStyle(fontSize: 36, color: deck.crown))),
-      ]),
-    ));
+      ),
+    );
   }
 }
 
 class TargetPanel extends ConsumerWidget {
   const TargetPanel({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Column(children: [
-        GoldPanel(child: Column(children: [
-          const Text('あなたのターゲット', style: TextStyle(fontWeight: FontWeight.bold)),
+  Widget build(BuildContext context, WidgetRef ref) => Column(
+        children: [
+          GoldPanel(
+            child: Column(
+              children: [
+                const Text(
+                  'あなたのターゲット',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  height: 150,
+                  width: 120,
+                  decoration: BoxDecoration(
+                    color: const Color(0xff101b23),
+                    border: Border.all(color: gold, width: 4),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Center(
+                    child:
+                        Icon(Icons.diamond, size: 76, color: Color(0xff42b9f1)),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text('白 +1点 / 黒 -2点'),
+                const Text('5色集めると +10点', style: TextStyle(color: parchment)),
+              ],
+            ),
+          ),
           const SizedBox(height: 12),
-          Container(height: 150, width: 120, decoration: BoxDecoration(color: const Color(0xff101b23), border: Border.all(color: gold, width: 4), borderRadius: BorderRadius.circular(8)), child: const Center(child: Icon(Icons.diamond, size: 76, color: Color(0xff42b9f1)))),
-          const SizedBox(height: 10),
-          const Text('白 +1点 / 黒 -2点'),
-          const Text('5色集めると +10点', style: TextStyle(color: parchment)),
-        ])),
-        const SizedBox(height: 12),
-        GoldPanel(child: Column(children: [
-          const Text('推理メモ（あなただけ）', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text(ref.watch(memoProvider), style: const TextStyle(height: 1.7)),
-          const SizedBox(height: 8),
-          OutlinedButton(onPressed: () => _editMemo(context, ref), child: const Text('メモを編集')),
-        ])),
-      ]);
+          GoldPanel(
+            child: Column(
+              children: [
+                const Text(
+                  '推理メモ（あなただけ）',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(ref.watch(memoProvider),
+                    style: const TextStyle(height: 1.7)),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => _editMemo(context, ref),
+                  child: const Text('メモを編集'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
 
   void _editMemo(BuildContext context, WidgetRef ref) {
     final controller = TextEditingController(text: ref.read(memoProvider));
-    showDialog<void>(context: context, builder: (_) => AlertDialog(title: const Text('推理メモ'), content: TextField(controller: controller, maxLines: 6, autofocus: true), actions: [
-      TextButton(onPressed: () => Navigator.pop(context), child: const Text('キャンセル')),
-      FilledButton(onPressed: () { ref.read(memoProvider.notifier).state = controller.text; Navigator.pop(context); }, child: const Text('保存')),
-    ]));
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('推理メモ'),
+        content: TextField(
+          controller: controller,
+          maxLines: 6,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () {
+              ref.read(memoProvider.notifier).state = controller.text;
+              Navigator.pop(context);
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HandSection extends StatelessWidget {
+  const HandSection({super.key});
+  static const hand = [
+    HandCard(Colors.red, 3),
+    HandCard(Colors.white, 1),
+    HandCard(Colors.black, 12),
+    HandCard(Colors.blue, 3),
+    HandCard(Color(0xff2a2f3a), 0, faceDownOnly: true),
+  ];
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: GoldPanel(
+          child: Column(
+            children: [
+              const Text(
+                '—  手札エリア（自分だけ確認可能） —',
+                style: TextStyle(color: parchment, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'タップでおもてを確認 / もう一度タップで裏に戻す',
+                style: TextStyle(color: Color(0xff9fb0bf), fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.center,
+                children: [
+                  for (var i = 0; i < hand.length; i++)
+                    HandCardTile(index: i, card: hand[i]),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+class HandCardTile extends ConsumerWidget {
+  const HandCardTile({required this.index, required this.card, super.key});
+  final int index;
+  final HandCard card;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final revealed =
+        ref.watch(revealedHandProvider).contains(index) && !card.faceDownOnly;
+    return Semantics(
+      button: true,
+      label: '手札${index + 1}',
+      child: InkWell(
+        onTap: card.faceDownOnly
+            ? null
+            : () {
+                final set = {...ref.read(revealedHandProvider)};
+                set.contains(index) ? set.remove(index) : set.add(index);
+                ref.read(revealedHandProvider.notifier).state = set;
+              },
+        borderRadius: BorderRadius.circular(7),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 66,
+          height: 92,
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: revealed ? parchment : const Color(0xff10151d),
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(color: const Color(0xff695b42), width: 2),
+            boxShadow: const [BoxShadow(color: Colors.black87, blurRadius: 5)],
+          ),
+          child: revealed
+              ? Column(
+                  children: [
+                    Align(
+                      alignment: Alignment.topLeft,
+                      child: Text(
+                        '${card.value}',
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Center(
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: card.color,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.black),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.bottomRight,
+                      child: Text(
+                        '${card.value}',
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : const Center(
+                  child: Text(
+                    '?',
+                    style: TextStyle(
+                      color: gold,
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+        ),
+      ),
+    );
   }
 }
 
@@ -266,16 +701,38 @@ class StrategySection extends StatelessWidget {
     ActionData('取引', '🤝', 2, '他プレイヤーと\nカードを1枚ずつ交換'),
   ];
   @override
-  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Column(children: [
-        const Padding(padding: EdgeInsets.all(10), child: Text('—  戦略カード（ワーカーを置いて効果を使用） —', style: TextStyle(color: parchment, fontWeight: FontWeight.bold))),
-        LayoutBuilder(builder: (context, box) => GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: box.maxWidth > 900 ? 5 : box.maxWidth > 520 ? 3 : 2, childAspectRatio: .82, crossAxisSpacing: 12, mainAxisSpacing: 12),
-          itemCount: actions.length,
-          itemBuilder: (_, i) => ActionCard(index: i, data: actions[i]),
-        )),
-      ]));
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(10),
+              child: Text(
+                '—  戦略カード（ワーカーを置いて効果を使用） —',
+                style: TextStyle(color: parchment, fontWeight: FontWeight.bold),
+              ),
+            ),
+            LayoutBuilder(
+              builder: (context, box) => GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: box.maxWidth > 900
+                      ? 5
+                      : box.maxWidth > 520
+                          ? 3
+                          : 2,
+                  childAspectRatio: .82,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
+                itemCount: actions.length,
+                itemBuilder: (_, i) => ActionCard(index: i, data: actions[i]),
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class ActionCard extends ConsumerWidget {
@@ -285,14 +742,61 @@ class ActionCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(selectedActionProvider) == index;
-    return Semantics(button: true, selected: selected, child: InkWell(
-      onTap: () => ref.read(selectedActionProvider.notifier).state = index,
-      child: AnimatedContainer(duration: const Duration(milliseconds: 180), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: panel, border: Border.all(color: selected ? Colors.cyanAccent : gold, width: selected ? 3 : 1), borderRadius: BorderRadius.circular(6)), child: Column(children: [
-        Row(children: [Expanded(child: Text(data.title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))), CircleAvatar(radius: 17, backgroundColor: ink, child: Text('${data.cost}', style: const TextStyle(color: gold)))]),
-        Expanded(child: Center(child: Text(data.icon, style: const TextStyle(fontSize: 48)))),
-        Text(data.description, textAlign: TextAlign.center, style: const TextStyle(height: 1.45)),
-      ])),
-    ));
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: () => ref.read(selectedActionProvider.notifier).state = index,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: panel,
+            border: Border.all(
+              color: selected ? Colors.cyanAccent : gold,
+              width: selected ? 3 : 1,
+            ),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      data.title,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  CircleAvatar(
+                    radius: 17,
+                    backgroundColor: ink,
+                    child: Text(
+                      '${data.cost}',
+                      style: const TextStyle(color: gold),
+                    ),
+                  ),
+                ],
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(data.icon, style: const TextStyle(fontSize: 48)),
+                ),
+              ),
+              Text(
+                data.description,
+                textAlign: TextAlign.center,
+                style: const TextStyle(height: 1.45),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -301,22 +805,30 @@ class HelpSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.all(12),
-        child: LayoutBuilder(builder: (context, box) => GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: box.maxWidth > 900 ? 3 : 1,
-          childAspectRatio: box.maxWidth > 900 ? 2.0 : 2.8,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          children: const [
-            HelpCard(title: '発掘の流れ', steps: ['山札を選択', '発掘しますか？', '宝石を獲得']),
-            HelpCard(title: '鑑定の流れ', steps: ['相手の手札', 'カードを選ぶ', '自分だけ確認']),
-            HelpCard(title: '埋葬・捏造', steps: ['手札を選択', 'ドラッグ', '山札へ置く']),
-            HelpCard(title: '調査の流れ', steps: ['山札を選択', '中身を確認', '元に戻る']),
-            HelpCard(title: '手札エリア', steps: ['🔴 3', '⚪ 1', '⚫ 12', '🔵 3', '?']),
-            HelpCard(title: 'ゲーム終了（得点結果）', steps: ['🥇 アルル 42点', '🥈 ゼファ 28点', '🥉 ノクス 21点']),
-          ],
-        )),
+        child: LayoutBuilder(
+          builder: (context, box) => GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: box.maxWidth > 900 ? 3 : 1,
+            childAspectRatio: box.maxWidth > 900 ? 2.0 : 2.8,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            children: const [
+              HelpCard(title: '発掘の流れ', steps: ['山札を選択', '発掘しますか？', '宝石を獲得']),
+              HelpCard(title: '鑑定の流れ', steps: ['相手の手札', 'カードを選ぶ', '自分だけ確認']),
+              HelpCard(title: '埋葬・捏造', steps: ['手札を選択', 'ドラッグ', '山札へ置く']),
+              HelpCard(title: '調査の流れ', steps: ['山札を選択', '中身を確認', '元に戻る']),
+              HelpCard(
+                  title: '手札エリア', steps: ['🔴 3', '⚪ 1', '⚫ 12', '🔵 3', '?']),
+              HelpCard(
+                title: 'ゲーム終了（得点結果）',
+                steps: ['🥇 アルル 42点', '🥈 ゼファ 28点', '🥉 ノクス 21点'],
+              ),
+              HelpCard(title: '保護されたカード', steps: ['🔴 6', '🔒 裏', '🟡 3']),
+              HelpCard(title: '独占の表示', steps: ['③ 青の王冠', '⑧ 赤の王冠']),
+            ],
+          ),
+        ),
       );
 }
 
@@ -325,9 +837,34 @@ class HelpCard extends StatelessWidget {
   final String title;
   final List<String> steps;
   @override
-  Widget build(BuildContext context) => GoldPanel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        const Divider(color: gold),
-        Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [for (var i = 0; i < steps.length; i++) ...[Flexible(child: Text(steps[i], textAlign: TextAlign.center, style: const TextStyle(color: parchment))), if (i < steps.length - 1) const Icon(Icons.arrow_forward, color: gold)]])),
-      ]));
+  Widget build(BuildContext context) => GoldPanel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const Divider(color: gold),
+            Expanded(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  for (var i = 0; i < steps.length; i++) ...[
+                    Flexible(
+                      child: Text(
+                        steps[i],
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: parchment),
+                      ),
+                    ),
+                    if (i < steps.length - 1)
+                      const Icon(Icons.arrow_forward, color: gold),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
 }
