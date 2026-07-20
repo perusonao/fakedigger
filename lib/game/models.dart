@@ -68,6 +68,7 @@ class PlayerState {
     required this.color,
     required this.avatar,
     required this.target,
+    this.image,
     this.hand = const [],
     this.workers = kWorkersPerPlayer,
     this.role,
@@ -80,6 +81,9 @@ class PlayerState {
   final Color color;
   final String avatar;
 
+  /// キャラクターの立ち絵アセット（省略時は [avatar] の文字を表示）。
+  final String? image;
+
   /// このプレイヤーのターゲット色（赤・青・黄・緑のいずれか）。
   final Gem target;
   final List<HandCard> hand;
@@ -91,6 +95,7 @@ class PlayerState {
         color: color,
         avatar: avatar,
         target: target,
+        image: image,
         role: role,
         hand: hand ?? this.hand,
         workers: workers ?? this.workers,

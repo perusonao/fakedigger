@@ -25,6 +25,14 @@ const gold = Color(0xffc69a45);
 const parchment = Color(0xffe5d5ad);
 const teal = Color(0xff72e1c1);
 
+/// プレイヤーの立ち絵（画像があれば画像、なければ文字）を丸く表示する。
+Widget playerAvatar(PlayerState p, double radius) => CircleAvatar(
+      radius: radius,
+      backgroundColor: p.color,
+      foregroundImage: p.image == null ? null : AssetImage(p.image!),
+      child: Text(p.avatar),
+    );
+
 class FakeDiggerApp extends ConsumerWidget {
   const FakeDiggerApp({super.key});
   @override
@@ -56,19 +64,31 @@ class GameScreen extends ConsumerWidget {
       if (next && prev != true) _showResult(context, ref);
     });
 
+    // ダッシュボードは横長構成の固定基準サイズで作り、画面に合わせて等比縮小する。
+    // これにより縦長スマホでも各パネルが潰れず、モック通りの配置を保つ。
     return Scaffold(
+      backgroundColor: ink,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: const [
-              Header(),
-              SizedBox(height: 8),
-              Expanded(flex: 55, child: MiddleRow()),
-              SizedBox(height: 8),
-              Expanded(flex: 33, child: StrategySection()),
-            ],
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.contain,
+            child: SizedBox(
+              width: 1280,
+              height: 840,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: const [
+                    Header(),
+                    SizedBox(height: 8),
+                    Expanded(flex: 55, child: MiddleRow()),
+                    SizedBox(height: 8),
+                    Expanded(flex: 33, child: StrategySection()),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -119,14 +139,7 @@ class GameScreen extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    CircleAvatar(
-                      radius: 14,
-                      backgroundColor: row.player.color,
-                      child: Text(
-                        row.player.avatar,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
+                    playerAvatar(row.player, 14),
                     const SizedBox(width: 8),
                     Expanded(child: Text(row.player.name)),
                     Text(
@@ -342,11 +355,7 @@ class PlayerChip extends StatelessWidget {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: player.color,
-                  child: Text(player.avatar),
-                ),
+                playerAvatar(player, 16),
                 if (player.role != null)
                   Positioned(
                     left: -4,
@@ -513,8 +522,7 @@ class RoundPanel extends ConsumerWidget {
         const SizedBox(height: 6),
         Row(
           children: [
-            CircleAvatar(
-                backgroundColor: start.color, child: Text(start.avatar)),
+            playerAvatar(start, 20),
             const SizedBox(width: 8),
             Text(start.name),
           ],
@@ -721,8 +729,11 @@ class TargetPanel extends ConsumerWidget {
             border: Border.all(color: gold, width: 4),
             borderRadius: BorderRadius.circular(8),
           ),
-          child:
-              Center(child: Icon(Icons.diamond, size: 60, color: target.color)),
+          clipBehavior: Clip.antiAlias,
+          child: target == Gem.blue
+              ? Image.asset('assets/img/gem_blue.png', fit: BoxFit.cover)
+              : Center(
+                  child: Icon(Icons.diamond, size: 60, color: target.color)),
         ),
         const SizedBox(height: 8),
         Text('${target.label} +3点 / 白 +1点 / 黒 -2点',
@@ -771,8 +782,9 @@ class TargetPanel extends ConsumerWidget {
 }
 
 class ActionData {
-  const ActionData(this.title, this.icon, this.cost, this.description);
-  final String title, description;
+  const ActionData(
+      this.title, this.icon, this.cost, this.description, this.image);
+  final String title, description, image;
   final IconData icon;
   final int cost;
 }
@@ -780,16 +792,26 @@ class ActionData {
 class StrategySection extends StatelessWidget {
   const StrategySection({super.key});
   static const actions = [
-    ActionData('発掘', Icons.hardware, 1, '山札の1番上のカードを手札に加える'),
-    ActionData('鑑定', Icons.search, 1, '他プレイヤーの宝石カード1枚を見る'),
-    ActionData('調査', Icons.visibility, 1, '任意の山札のすべてのカードを見る'),
-    ActionData('整地', Icons.grass, 1, '任意の山札2つを1〜5枚ずつに作り変える'),
-    ActionData('埋葬', Icons.south, 1, '手札のカード1枚を山札の1番上に置く'),
-    ActionData('強奪', Icons.pan_tool, 2, '他プレイヤーの宝石を自分の手札にする'),
-    ActionData('独占', Icons.workspace_premium, 1, '任意の山札を効果の対象外にする'),
-    ActionData('捏造', Icons.swap_horiz, 2, '手札と山札のカードを交換する'),
-    ActionData('保護', Icons.shield, 1, '手札を任意の枚数、効果対象外にする'),
-    ActionData('取引', Icons.handshake, 2, '他プレイヤーとカードを1枚ずつ交換'),
+    ActionData(
+        '発掘', Icons.hardware, 1, '山札の1番上のカードを手札に加える', 'assets/img/act_dig.png'),
+    ActionData('鑑定', Icons.search, 1, '他プレイヤーの宝石カード1枚を見る',
+        'assets/img/act_appraise.png'),
+    ActionData('調査', Icons.visibility, 1, '任意の山札のすべてのカードを見る',
+        'assets/img/act_investigate.png'),
+    ActionData('整地', Icons.grass, 1, '任意の山札2つを1〜5枚ずつに作り変える',
+        'assets/img/act_level.png'),
+    ActionData(
+        '埋葬', Icons.south, 1, '手札のカード1枚を山札の1番上に置く', 'assets/img/act_bury.png'),
+    ActionData('強奪', Icons.pan_tool, 2, '他プレイヤーの宝石を自分の手札にする',
+        'assets/img/act_rob.png'),
+    ActionData('独占', Icons.workspace_premium, 1, '任意の山札を効果の対象外にする',
+        'assets/img/act_monopoly.png'),
+    ActionData('捏造', Icons.swap_horiz, 2, '手札と山札のカードを交換する',
+        'assets/img/act_fabricate.png'),
+    ActionData('保護', Icons.shield, 1, '手札を任意の枚数、効果対象外にする',
+        'assets/img/act_protect.png'),
+    ActionData('取引', Icons.handshake, 2, '他プレイヤーとカードを1枚ずつ交換',
+        'assets/img/act_trade.png'),
   ];
   @override
   Widget build(BuildContext context) => GoldPanel(
@@ -882,13 +904,9 @@ class ActionCard extends ConsumerWidget {
                 ),
                 Expanded(
                   child: Center(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Icon(
-                        data.icon,
-                        size: 40,
-                        color: implemented ? gold : parchment,
-                      ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Image.asset(data.image, fit: BoxFit.contain),
                     ),
                   ),
                 ),
