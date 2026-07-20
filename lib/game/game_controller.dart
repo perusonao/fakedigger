@@ -35,21 +35,21 @@ GameState createInitialGame({Random? random}) {
     PlayerState(
         name: 'アルル',
         color: Color(0xffd86c77),
-        avatar: '♛',
+        avatar: 'ア',
         target: Gem.blue,
         role: 'YOU'),
     PlayerState(
         name: 'ゼファ',
         color: Color(0xff46aee8),
-        avatar: '⚔',
+        avatar: 'ゼ',
         target: Gem.red,
         role: 'YP'),
     PlayerState(
-        name: 'ノクス', color: Color(0xff76688e), avatar: '☾', target: Gem.green),
+        name: 'ノクス', color: Color(0xff76688e), avatar: 'ノ', target: Gem.green),
     PlayerState(
         name: 'ミア',
         color: Color(0xffe5ad54),
-        avatar: '✦',
+        avatar: 'ミ',
         target: Gem.yellow,
         role: 'YP'),
   ];
