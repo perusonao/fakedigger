@@ -256,9 +256,17 @@ class PortraitDashboard extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const GoldPanel(child: RoundPanel()),
-                const SizedBox(height: 8),
-                const GoldPanel(child: TargetPanel()),
+                // ラウンド情報とターゲット/メモを左右2列に並べ、縦の消費を抑える。
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: const [
+                      Expanded(child: GoldPanel(child: RoundPanel())),
+                      SizedBox(width: 8),
+                      Expanded(child: GoldPanel(child: TargetPanel())),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 8),
                 GoldPanel(
                   child: Column(
@@ -269,10 +277,10 @@ class PortraitDashboard extends ConsumerWidget {
                         physics: const NeverScrollableScrollPhysics(),
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          childAspectRatio: 1.5,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 16,
+                          crossAxisCount: 4,
+                          childAspectRatio: 0.86,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 10,
                         ),
                         itemCount: state.decks.length,
                         itemBuilder: (_, i) => DeckCard(
