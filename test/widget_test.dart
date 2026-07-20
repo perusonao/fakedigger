@@ -25,4 +25,26 @@ void main() {
     expect(decoration.border, isNotNull);
     handle.dispose();
   });
+
+  testWidgets('layoutProviderで縦レイアウトを選べる', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [layoutProvider.overrideWith((ref) => AppLayout.portrait)],
+        child: const MaterialApp(home: GameScreen()),
+      ),
+    );
+    expect(find.byType(PortraitDashboard), findsOneWidget);
+    expect(find.byType(LandscapeDashboard), findsNothing);
+  });
+
+  testWidgets('layoutProviderで横レイアウトを選べる', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [layoutProvider.overrideWith((ref) => AppLayout.landscape)],
+        child: const MaterialApp(home: GameScreen()),
+      ),
+    );
+    expect(find.byType(LandscapeDashboard), findsOneWidget);
+    expect(find.byType(PortraitDashboard), findsNothing);
+  });
 }
