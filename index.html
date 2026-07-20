@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FakeDigger フェイクディガー</title>
+<style>
+  :root{
+    --bg:#0e1b26; --panel:#15293a; --panel2:#1d3a52; --line:#2c5170;
+    --text:#e8f1f7; --muted:#9db4c6; --accent:#3ea0d8; --accent2:#f0a93a;
+    --good:#4caf72; --bad:#d64545;
+    --c-black:#2b2f36; --c-white:#eef2f5; --c-red:#d64545; --c-blue:#4571d6;
+    --c-yellow:#e0b83a; --c-green:#4caf72;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;
+    background:linear-gradient(160deg,#0b1620,#12283a);color:var(--text);min-height:100vh}
+  h1,h2,h3{margin:0}
+  button{font-family:inherit;cursor:pointer}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  header.top{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+  header.top h1{font-size:26px;letter-spacing:1px}
+  header.top .sub{color:var(--muted);font-size:13px}
+  .btn{background:var(--accent);color:#04212f;border:none;padding:9px 16px;border-radius:8px;font-weight:700}
+  .btn:hover{filter:brightness(1.08)}
+  .btn.sec{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+
+  /* start screen */
+  #start{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:28px;max-width:560px;margin:40px auto}
+  #start p{color:var(--muted);line-height:1.7}
+  .rowsel{display:flex;gap:8px;margin:14px 0}
+  .rowsel button{flex:1;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-weight:700}
+  .rowsel button.on{background:var(--accent);color:#04212f;border-color:var(--accent)}
+
+  /* layout */
+  .board{display:grid;grid-template-columns:1fr 300px;gap:14px}
+  @media(max-width:900px){.board{grid-template-columns:1fr}}
+  .card-box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+  .card-box h3{font-size:14px;color:var(--accent);margin-bottom:8px;letter-spacing:.5px}
+
+  /* piles */
+  .piles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  @media(max-width:640px){.piles{grid-template-columns:repeat(2,1fr)}}
+  .pile{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center;position:relative;transition:.12s}
+  .pile.selectable{cursor:pointer;border-color:var(--accent);box-shadow:0 0 0 2px rgba(62,160,216,.25)}
+  .pile.selectable:hover{background:#264a68}
+  .pile .plabel{font-size:11px;color:var(--muted);margin-bottom:4px}
+  .pile .count{font-size:11px;color:var(--muted);margin-top:4px}
+  .pile .mono{font-weight:700;color:var(--accent2)}
+
+  .gem{display:inline-flex;align-items:center;justify-content:center;width:34px;height:46px;border-radius:6px;
+    border:1px solid rgba(255,255,255,.25);font-size:10px;font-weight:700;color:#fff;position:relative}
+  .gem.top{width:44px;height:60px;font-size:11px}
+  .gem.black{background:var(--c-black)} .gem.white{background:var(--c-white);color:#333}
+  .gem.red{background:var(--c-red)} .gem.blue{background:var(--c-blue)}
+  .gem.yellow{background:var(--c-yellow);color:#3a2e00} .gem.green{background:var(--c-green)}
+  .gem.back{background:repeating-linear-gradient(45deg,#26445f,#26445f 5px,#203a52 5px,#203a52 10px);color:#cfe2f0}
+  .gem .known{position:absolute;top:-6px;right:-6px;background:var(--accent2);color:#3a2600;border-radius:50%;
+    width:15px;height:15px;font-size:10px;line-height:15px;text-align:center;font-weight:800}
+  .hint{display:flex;gap:2px;justify-content:center;margin-top:4px}
+  .hintdot{width:9px;height:9px;border-radius:50%;border:1px solid rgba(255,255,255,.35)}
+
+  /* strategies */
+  .strats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  @media(max-width:640px){.strats{grid-template-columns:repeat(2,1fr)}}
+  .strat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px;text-align:left;position:relative}
+  .strat.avail{cursor:pointer;border-color:var(--good)}
+  .strat.avail:hover{background:#264a68}
+  .strat.used{opacity:.45}
+  .strat .sname{font-weight:700;font-size:14px}
+  .strat .scost{position:absolute;top:6px;right:8px;background:var(--accent2);color:#3a2600;border-radius:6px;
+    font-size:11px;font-weight:800;padding:1px 6px}
+  .strat .sdesc{font-size:10.5px;color:var(--muted);line-height:1.35;margin-top:3px}
+  .strat .worker{margin-top:5px;font-size:11px;color:var(--accent)}
+
+  /* players */
+  .players{display:flex;flex-direction:column;gap:10px}
+  .pl{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px}
+  .pl.turn{border-color:var(--accent2);box-shadow:0 0 0 2px rgba(240,169,58,.3)}
+  .pl.robtarget{border-color:var(--bad);cursor:pointer;box-shadow:0 0 0 2px rgba(214,69,69,.3)}
+  .pl .phead{display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:14px}
+  .pl .meta{font-size:11px;color:var(--muted)}
+  .pl .hand{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-height:20px}
+  .hand .gem.pick{cursor:pointer;outline:2px solid var(--accent2)}
+  .worker-dot{display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--accent);margin-left:3px}
+  .worker-dot.spent{background:#3a5165}
+
+  .log{background:#0c1a26;border:1px solid var(--line);border-radius:10px;padding:8px;height:150px;overflow-y:auto;
+    font-size:12px;line-height:1.6}
+  .log .me{color:var(--accent)} .log .ai{color:var(--accent2)} .log .sys{color:var(--muted)}
+
+  .banner{background:var(--panel);border:1px solid var(--accent2);border-radius:10px;padding:10px 14px;margin-bottom:12px;
+    display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .banner .msg{font-weight:700}
+  .banner .hintmsg{color:var(--muted);font-size:13px}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(4,12,20,.7);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto}
+  .modal h2{margin-bottom:10px}
+  .sizebtns{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+  .sizebtns button{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-weight:700}
+  .sizebtns button:hover{background:var(--accent);color:#04212f}
+  table.score{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+  table.score th,table.score td{border:1px solid var(--line);padding:6px 8px;text-align:center}
+  table.score th{background:var(--panel2)}
+  .winner{color:var(--accent2);font-weight:800}
+  .foot{color:var(--muted);font-size:12px;margin-top:22px;text-align:center;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>FakeDigger</h1>
+    <span class="sub">フェイクディガー — 宝石発掘バトル（デジタル版・ビギナールール）</span>
+  </header>
+
+  <!-- START SCREEN -->
+  <div id="start">
+    <h2>ゲーム開始</h2>
+    <p>戦略カードでワーカーを配置し、価値ある宝石を集めるバトルゲームです。あなたはプレイヤー1。残りはAIが操作します。<br>
+    自分の<b>ターゲット色</b>の宝石＝<b>+3点</b>、白＝<b>+1点</b>、黒＝<b>-2点</b>。うら面の<b>DAIヒント</b>（可能性のある色）を手がかりに山札を掘り進めましょう。</p>
+    <div style="margin-top:16px"><b>プレイ人数</b>（あなた＋AI）</div>
+    <div class="rowsel" id="playerSel">
+      <button data-n="2" class="on">2人</button>
+      <button data-n="3">3人</button>
+      <button data-n="4">4人</button>
+    </div>
+    <button class="btn" style="width:100%;padding:13px;font-size:16px" onclick="startGame()">スタート</button>
+  </div>
+
+  <!-- GAME SCREEN -->
+  <div id="game" style="display:none">
+    <div class="banner">
+      <div><div class="msg" id="bannerMsg"></div><div class="hintmsg" id="bannerHint"></div></div>
+      <div id="bannerActions"></div>
+    </div>
+    <div class="board">
+      <div>
+        <div class="card-box">
+          <h3>山札（8山 / うら面はDAIヒント表示）</h3>
+          <div class="piles" id="piles"></div>
+        </div>
+        <div class="card-box">
+          <h3>戦略カード</h3>
+          <div class="strats" id="strats"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card-box">
+          <h3>プレイヤー</h3>
+          <div class="players" id="players"></div>
+        </div>
+        <div class="card-box">
+          <h3>ログ</h3>
+          <div class="log" id="log"></div>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      終了条件：いずれかの山札が0枚 or いずれかの手札が6枚 → 即時終了<br>
+      DAIヒントの●＝その山札トップの「あり得る色」。調査/鑑定で見た色は★で確定表示されます。
+    </div>
+  </div>
+</div>
+
+<div id="overlayRoot"></div>
+
+<script>
+/* ============================================================
+   FakeDigger — digital adaptation (Beginner ruleset)
+   Single-file vanilla JS. You (P1) vs AI opponents.
+   ============================================================ */
+
+const COLORS = ["black","white","red","blue","yellow","green"];
+const COLOR_JP = {black:"黒",white:"白",red:"赤",blue:"青",yellow:"黄",green:"緑"};
+// gem distribution: total 40, black fixed at 12 (per rules)
+const DISTRIBUTION = {black:12, white:8, red:5, blue:5, yellow:5, green:5};
+const TARGET_COLORS = ["red","blue","yellow","green"]; // possible target colors
+// DAI hint groups: each card gets a group containing its true color -> deduction flavor
+const DAI_GROUPS = [
+  ["black","red","white"], ["black","blue","yellow"], ["black","green","white"],
+  ["red","blue","green"], ["white","yellow","green"], ["red","yellow","black"],
+  ["blue","green","white"], ["black","white"]
+];
+
+const STRATEGIES = [
+  {key:"dig",     name:"発掘", cost:1, repeatable:true,
+   desc:"山札トップを手札へ。何度でも可。山の最後の1枚は得点2倍。"},
+  {key:"appraise",name:"鑑定", cost:1,
+   desc:"他PLの宝石1枚を見る（相手が選ぶ）。使うと次R開始PLになる。"},
+  {key:"level",   name:"整地", cost:1,
+   desc:"山札2つを混ぜ、1〜5枚の2山に作り直す。"},
+  {key:"survey",  name:"調査", cost:1,
+   desc:"任意の山札1つの全カードを見る。"},
+  {key:"bury",    name:"埋葬", cost:1,
+   desc:"手札1枚を山札トップへ置く（山は5枚以下）。"},
+  {key:"rob",     name:"強奪", cost:2,
+   desc:"他PLの宝石1枚を奪う（相手が選ぶ）。"},
+];
+
+let G = null; // game state
+let uidCounter = 0;
+
+function rnd(n){return Math.floor(Math.random()*n);}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=rnd(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
+function el(id){return document.getElementById(id);}
+
+/* ---------- setup ---------- */
+document.querySelectorAll("#playerSel button").forEach(b=>{
+  b.onclick=()=>{document.querySelectorAll("#playerSel button").forEach(x=>x.classList.remove("on"));b.classList.add("on");};
+});
+function selectedPlayerCount(){return +document.querySelector("#playerSel button.on").dataset.n;}
+
+function startGame(){
+  const n = selectedPlayerCount();
+  buildGame(n);
+  el("start").style.display="none";
+  el("game").style.display="block";
+  render();
+  log("sys","ゲーム開始！ あなたのターゲット色は「"+COLOR_JP[G.players[0].targetColor]+"」です。");
+  beginTurn();
+}
+
+function buildGame(n){
+  uidCounter=0;
+  // create card deck
+  let deck=[];
+  for(const c of COLORS){
+    for(let i=0;i<DISTRIBUTION[c];i++){
+      const groups = DAI_GROUPS.filter(g=>g.includes(c));
+      const hint = groups[rnd(groups.length)];
+      deck.push({id:uidCounter++, color:c, hint, doubled:false, knownTo:new Set()});
+    }
+  }
+  shuffle(deck);
+  // 8 piles of 5 — store card IDs (card objects live in G.cards)
+  const piles=[];
+  for(let p=0;p<8;p++) piles.push(deck.slice(p*5,p*5+5).map(c=>c.id));
+  // players
+  const targets = shuffle([...TARGET_COLORS]);
+  const players=[];
+  for(let i=0;i<n;i++){
+    players.push({
+      id:i, name:i===0?"あなた":("AI-"+i), isAI:i!==0,
+      hand:[], workers:2, targetColor:targets[i%targets.length], buryCount:0
+    });
+  }
+  const cards={}; deck.forEach(c=>cards[c.id]=c);
+  G={
+    n, players, piles, cards,
+    strategies: STRATEGIES.map(s=>({...s, workerBy:null})),
+    startPlayer:0, current:0, round:1,
+    appraiseUser:null, gameOver:false,
+    phase:"idle", pending:null, log:[]
+  };
+}
+
+/* ---------- helpers ---------- */
+function card(id){return G.cards[id];}
+function colorValue(player,color){ // base points of a gem for this player
+  if(color==="white")return 1;
+  if(color==="black")return -2;
+  if(color===player.targetColor)return 3;
+  return 0;
+}
+function pileTop(p){return p.length?p[p.length-1]:null;}
+function isKnownTo(c,pid){return c.knownTo.has(pid);}
+function markKnown(c,pid){c.knownTo.add(pid);}
+function activeStrategyAvailable(s,player){
+  if(s.repeatable)return player.workers>=s.cost;
+  return s.workerBy===null && player.workers>=s.cost;
+}
+function log(cls,msg){G.log.push({cls,msg});const l=el("log");if(l){/* rendered in render() */}}
+
+/* ---------- turn flow ---------- */
+function beginTurn(){
+  if(G.gameOver)return;
+  const p=G.players[G.current];
+  if(p.workers<=0){advanceTurn();return;}
+  if(p.isAI){
+    G.phase="idle"; render();
+    setTimeout(()=>aiTurn(p), 700);
+  }else{
+    G.phase="chooseStrategy"; render();
+  }
+}
+
+function advanceTurn(){
+  if(G.gameOver)return;
+  // find next player (clockwise) with workers>0
+  for(let step=1;step<=G.n;step++){
+    const idx=(G.current+step)%G.n;
+    if(G.players[idx].workers>0){G.current=idx;beginTurn();return;}
+  }
+  // nobody has workers -> end round
+  endRound();
+}
+
+function endRound(){
+  if(G.gameOver)return;
+  // safety net: a real game ends well before this; guarantees termination vs. AIs
+  if(G.round>=60){
+    G.gameOver=true;
+    log("sys","★ 規定ラウンドに到達したため終了します。");
+    render(); setTimeout(showScores,400); return;
+  }
+  const next = (G.appraiseUser!==null)?G.appraiseUser:(G.startPlayer+1)%G.n;
+  log("sys","── ラウンド"+G.round+" 終了 ── 次の開始PL: "+G.players[next].name+
+      (G.appraiseUser!==null?"（鑑定使用）":"（時計回り）"));
+  G.startPlayer=next; G.current=next; G.round++;
+  G.appraiseUser=null;
+  G.players.forEach(p=>p.workers=2);
+  G.strategies.forEach(s=>s.workerBy=null);
+  render();
+  setTimeout(beginTurn, 500);
+}
+
+function payAndAfter(player,cost){
+  player.workers-=cost;
+  if(checkGameEnd())return;
+  render();
+  setTimeout(advanceTurn, player.isAI?600:250);
+}
+
+function checkGameEnd(){
+  if(G.gameOver)return true;
+  const emptyPile = G.piles.some(p=>p.length===0);
+  const fullHand = G.players.some(p=>p.hand.length>=6);
+  if(emptyPile||fullHand){
+    G.gameOver=true;
+    log("sys","★ 終了条件成立："+(emptyPile?"山札が0枚":"手札が6枚"));
+    render();
+    setTimeout(showScores, 400);
+    return true;
+  }
+  return false;
+}
+
+/* ============================================================
+   ACTION EXECUTION (shared by human & AI)
+   ============================================================ */
+function execDig(player, pileIdx){
+  const pile=G.piles[pileIdx];
+  const c=card(pile.pop());
+  if(pile.length===0) c.doubled=true;
+  markKnown(c,player.id);
+  player.hand.push(c.id);
+  // only reveal the dug color in the log for the human player (hidden info for AI)
+  const shown = player.id===0 ? COLOR_JP[c.color] : "?";
+  log(player.isAI?"ai":"me", player.name+"が発掘 → "+shown+(c.doubled?"（最後の1枚・2倍！）":""));
+  markStrat(player,"dig");
+  payAndAfter(player,1);
+}
+
+function execSurvey(player,pileIdx){
+  G.piles[pileIdx].forEach(id=>markKnown(card(id),player.id));
+  log(player.isAI?"ai":"me", player.name+"が調査 → 山"+(pileIdx+1)+"を確認");
+  markStrat(player,"survey");
+  payAndAfter(player,1);
+}
+
+function execBury(player,pileIdx,handIdx){
+  const cid=player.hand.splice(handIdx,1)[0];
+  G.piles[pileIdx].push(cid);
+  player.buryCount++;
+  // buried card: hidden again to others but owner knew it; keep knownTo as is
+  log(player.isAI?"ai":"me", player.name+"が埋葬 → 手札を山"+(pileIdx+1)+"へ");
+  markStrat(player,"bury");
+  payAndAfter(player,1);
+}
+
+function execAppraise(player,targetPlayer,handIdxOfTarget){
+  const cid=targetPlayer.hand[handIdxOfTarget];
+  markKnown(card(cid),player.id);
+  G.appraiseUser=player.id;
+  log(player.isAI?"ai":"me", player.name+"が鑑定 → "+targetPlayer.name+"の宝石1枚を確認（次R開始PLに）");
+  markStrat(player,"appraise");
+  payAndAfter(player,1);
+}
+
+function execRob(player,targetPlayer,handIdxOfTarget){
+  const cid=targetPlayer.hand.splice(handIdxOfTarget,1)[0];
+  markKnown(card(cid),player.id);
+  player.hand.push(cid);
+  log(player.isAI?"ai":"me", player.name+"が強奪 → "+targetPlayer.name+"から宝石を奪取");
+  markStrat(player,"rob");
+  payAndAfter(player,2);
+}
+
+function execLevel(player,pa,pb,sizeA){
+  let merged=[...G.piles[pa],...G.piles[pb]];
+  shuffle(merged); // face-down remix (survey knowledge on these becomes unreliable -> we keep knownTo but positions shuffle)
+  const a=merged.slice(0,sizeA), b=merged.slice(sizeA);
+  G.piles[pa]=a; G.piles[pb]=b;
+  log(player.isAI?"ai":"me", player.name+"が整地 → 山"+(pa+1)+"/"+(pb+1)+"を "+a.length+"枚・"+b.length+"枚に再構成");
+  markStrat(player,"level");
+  payAndAfter(player,1);
+}
+
+function markStrat(player,key){
+  const s=G.strategies.find(x=>x.key===key);
+  if(!s.repeatable) s.workerBy=player.id;
+}
+
+/* ============================================================
+   HUMAN INTERACTION
+   ============================================================ */
+function humanPickStrategy(key){
+  if(G.phase!=="chooseStrategy")return;
+  const p=G.players[0];
+  const s=G.strategies.find(x=>x.key===key);
+  if(!activeStrategyAvailable(s,p))return;
+
+  if(key==="dig"){ startTarget("dig",{},"発掘する山札を選んでください"); }
+  else if(key==="survey"){ startTarget("survey",{},"調査する山札を選んでください"); }
+  else if(key==="bury"){
+    if(p.hand.length===0){flash("手札がありません");return;}
+    startTarget("bury_hand",{},"埋葬する手札の宝石を選んでください");
+  }
+  else if(key==="appraise"){
+    if(!othersHaveCards()){flash("他PLに宝石がありません");return;}
+    startTarget("appraise_player",{},"鑑定する相手プレイヤーを選んでください");
+  }
+  else if(key==="rob"){
+    if(!othersHaveCards()){flash("他PLに宝石がありません");return;}
+    startTarget("rob_player",{},"強奪する相手プレイヤーを選んでください");
+  }
+  else if(key==="level"){ startTarget("level_a",{},"整地：1つ目の山札を選んでください"); }
+}
+
+function startTarget(mode,data,msg){
+  G.phase="target"; G.pending={mode,...data,msg}; render();
+}
+function othersHaveCards(){return G.players.some(p=>p.id!==0 && p.hand.length>0);}
+
+function humanClickPile(idx){
+  if(G.phase!=="target")return;
+  const pd=G.pending, p=G.players[0], pile=G.piles[idx];
+  switch(pd.mode){
+    case "dig": execDig(p,idx); break;
+    case "survey": execSurvey(p,idx); break;
+    case "bury":
+      if(pile.length>=5){flash("その山札は5枚で満杯です");return;}
+      execBury(p,idx,pd.handIdx); break;
+    case "level_a": startTarget("level_b",{pa:idx},"整地：2つ目の山札を選んでください"); break;
+    case "level_b":
+      if(idx===pd.pa){flash("別の山札を選んでください");return;}
+      openLevelSplit(pd.pa,idx); break;
+  }
+}
+
+function humanClickHand(pid,handIdx){
+  if(G.phase!=="target")return;
+  const pd=G.pending, p=G.players[0];
+  if(pd.mode==="bury" || pd.mode==="bury_hand"){
+    if(pid!==0)return;
+    startTarget("bury",{handIdx},"埋葬先の山札を選んでください（5枚未満）");
+    return;
+  }
+  if(pd.mode==="appraise_target" && pid===pd.targetPid){
+    execAppraise(p,G.players[pd.targetPid],handIdx); return;
+  }
+  if(pd.mode==="rob_target" && pid===pd.targetPid){
+    execRob(p,G.players[pd.targetPid],handIdx); return;
+  }
+}
+
+function humanClickPlayer(pid){
+  if(G.phase!=="target")return;
+  const pd=G.pending;
+  if(pid===0)return;
+  const tp=G.players[pid];
+  if(tp.hand.length===0){flash("そのPLは宝石を持っていません");return;}
+  if(pd.mode==="appraise_player"){
+    // target chooses which card -> AI reveals least useful (a known/black one)
+    const idx=aiChooseCardToReveal(tp,0);
+    execAppraise(G.players[0],tp,idx);
+  }else if(pd.mode==="rob_player"){
+    // target chooses which card to give -> AI gives its worst card
+    const idx=aiChooseCardToGive(tp);
+    execRob(G.players[0],tp,idx);
+  }
+}
+
+function openLevelSplit(pa,pb){
+  const total=G.piles[pa].length+G.piles[pb].length;
+  // valid sizeA: 1..total-1, and both parts <=5
+  const opts=[];
+  for(let a=1;a<total;a++){ if(a<=5 && (total-a)<=5) opts.push(a); }
+  let html='<div class="modal"><h2>整地：分け方を選択</h2>'+
+    '<p style="color:var(--muted)">合計'+total+'枚を、2つの山（各1〜5枚）に分けます。1つ目の山の枚数を選んでください（中身はシャッフルされます）。</p>'+
+    '<div class="sizebtns">';
+  opts.forEach(a=>{ html+='<button onclick="confirmLevel('+pa+','+pb+','+a+')">'+a+'枚 / '+(total-a)+'枚</button>'; });
+  html+='</div><button class="btn sec" onclick="closeOverlay();cancelTarget()">キャンセル</button></div>';
+  el("overlayRoot").innerHTML='<div class="overlay">'+html+'</div>';
+}
+function confirmLevel(pa,pb,a){ closeOverlay(); execLevel(G.players[0],pa,pb,a); }
+function closeOverlay(){ el("overlayRoot").innerHTML=""; }
+function cancelTarget(){ if(G.phase==="target"){G.phase="chooseStrategy";G.pending=null;render();} }
+function flash(msg){ el("bannerHint").textContent=msg; }
+
+/* ============================================================
+   AI
+   ============================================================ */
+function aiKnownColor(c,pid){ return isKnownTo(c,pid) ? c.color : null; }
+function aiExpectedValue(player,c){
+  const known=aiKnownColor(c,player.id);
+  if(known) return colorValue(player,known);
+  // average over hint possibilities
+  let s=0; c.hint.forEach(col=>s+=colorValue(player,col));
+  return s/c.hint.length;
+}
+function aiChooseCardToGive(tp){ // victim gives worst-to-self card (black ideal)
+  let best=0,bv=Infinity;
+  tp.hand.forEach((cid,i)=>{const v=colorValue(tp,card(cid).color); if(v<bv){bv=v;best=i;}});
+  return best;
+}
+function aiChooseCardToReveal(tp,requesterId){ // reveal least valuable / already known
+  let best=0,bv=Infinity;
+  tp.hand.forEach((cid,i)=>{
+    const c=card(cid);
+    let v=colorValue(tp,c.color); if(isKnownTo(c,requesterId))v-=100; // prefer already-known
+    if(v<bv){bv=v;best=i;}
+  });
+  return best;
+}
+
+function aiTurn(p){
+  if(G.gameOver)return;
+  // --- evaluate best dig (expected value, doubling on last card) ---
+  let bestDig=null;
+  G.piles.forEach((pile,i)=>{
+    if(pile.length===0)return;
+    let ev=aiExpectedValue(p,card(pileTop(pile)));
+    if(pile.length===1) ev*=2;
+    if(!bestDig||ev>bestDig.ev) bestDig={i,ev};
+  });
+  // --- best rob: a known, valuable opponent card ---
+  let bestRob=null;
+  if(p.workers>=2){
+    G.players.forEach(op=>{
+      if(op.id===p.id||op.hand.length===0)return;
+      op.hand.forEach(cid=>{
+        const c=card(cid);
+        if(isKnownTo(c,p.id)){
+          const v=colorValue(p,c.color);
+          if(v>0 && (!bestRob||v>bestRob.v)) bestRob={op,color:c.color,v};
+        }
+      });
+    });
+  }
+
+  // Priority policy (always makes progress -> game terminates):
+  // 1) grab a clearly valuable known card from an opponent
+  if(bestRob && bestRob.v>=3){ execRob(p,bestRob.op,aiVictimGivesSpecific(bestRob.op,bestRob.color)); return; }
+  // 2) dig a good/neutral pile (fills hand toward 6, advances the game)
+  if(bestDig && bestDig.ev>=0){ execDig(p,bestDig.i); return; }
+  // 3) all digs look bad -> survey an unknown pile to gain information
+  const si=G.piles.findIndex(pl=>pl.length && pl.some(id=>!isKnownTo(card(id),p.id)));
+  if(si>=0){ execSurvey(p,si); return; }
+  // 4) dump a black card back into a pile (capped, so it can't loop with digging)
+  if(p.buryCount<2){
+    const bi=p.hand.findIndex(cid=>card(cid).color==="black");
+    if(bi>=0){ const t=G.piles.findIndex(pl=>pl.length<5); if(t>=0){ execBury(p,t,bi); return; } }
+  }
+  // 5) nothing attractive -> dig the least-bad pile anyway to keep the game moving
+  if(bestDig){ execDig(p,bestDig.i); return; }
+  // 6) no cards anywhere to act on -> just spend remaining workers
+  payAndAfter(p,p.workers);
+}
+function aiVictimGivesSpecific(op,color){
+  const i=op.hand.findIndex(cid=>card(cid).color===color);
+  return i>=0?i:aiChooseCardToGive(op);
+}
+
+/* ============================================================
+   SCORING
+   ============================================================ */
+function scoreHand(player){
+  const counts={}; COLORS.forEach(c=>counts[c]=0);
+  let base=0; const detail=[];
+  player.hand.forEach(cid=>{
+    const c=card(cid); counts[c.color]++;
+    let v=colorValue(player,c.color); if(c.doubled)v*=2;
+    base+=v;
+  });
+  let bonus=0; const bonusNotes=[];
+  // all 5 non-black colors present
+  const has5 = ["white","red","blue","yellow","green"].every(c=>counts[c]>0);
+  if(has5){bonus+=10;bonusNotes.push("5色ボーナス +10");}
+  // 5 of same
+  const same5 = COLORS.some(c=>counts[c]>=5);
+  if(same5){bonus+=20;bonusNotes.push("同色5枚 +20");}
+  return {base,bonus,total:base+bonus,counts,bonusNotes};
+}
+
+function showScores(){
+  const rows=G.players.map(p=>({p, s:scoreHand(p)}));
+  const max=Math.max(...rows.map(r=>r.s.total));
+  let html='<div class="modal"><h2>ゲーム終了 — 得点計算</h2>'+
+    '<table class="score"><tr><th>PL</th><th>ターゲット</th><th>手札</th><th>基本点</th><th>ボーナス</th><th>合計</th></tr>';
+  rows.forEach(r=>{
+    const win=r.s.total===max;
+    const handStr=r.p.hand.map(cid=>{const c=card(cid);return COLOR_JP[c.color]+(c.doubled?"×2":"");}).join(" ")||"（なし）";
+    html+='<tr'+(win?' class="winner"':'')+'><td>'+r.p.name+(win?' 👑':'')+'</td>'+
+      '<td>'+COLOR_JP[r.p.targetColor]+'</td>'+
+      '<td style="font-size:11px;text-align:left">'+handStr+'</td>'+
+      '<td>'+r.s.base+'</td>'+
+      '<td>'+(r.s.bonusNotes.join("<br>")||'-')+'</td>'+
+      '<td><b>'+r.s.total+'</b></td></tr>';
+  });
+  html+='</table>';
+  const winners=rows.filter(r=>r.s.total===max).map(r=>r.p.name);
+  html+='<p style="margin-top:12px;font-size:16px" class="winner">勝者：'+winners.join(" / ")+'</p>';
+  html+='<button class="btn" style="margin-top:6px" onclick="location.reload()">もう一度プレイ</button></div>';
+  el("overlayRoot").innerHTML='<div class="overlay">'+html+'</div>';
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function render(){
+  if(!G)return;
+  const meTurn = G.current===0 && !G.gameOver && G.players[0].workers>0;
+  // banner
+  const cur=G.players[G.current];
+  el("bannerMsg").textContent = G.gameOver?"ゲーム終了":
+    ("ラウンド"+G.round+" / "+cur.name+"の手番");
+  if(G.phase==="target"){ el("bannerHint").textContent=G.pending.msg; }
+  else if(meTurn){ el("bannerHint").textContent="戦略カードを選んでください（残ワーカー "+G.players[0].workers+"）"; }
+  else if(!G.gameOver){ el("bannerHint").textContent="AI思考中…"; }
+  // banner actions
+  const ba=el("bannerActions"); ba.innerHTML="";
+  if(G.phase==="target"){
+    const b=document.createElement("button"); b.className="btn sec"; b.textContent="キャンセル";
+    b.onclick=cancelTarget; ba.appendChild(b);
+  }
+
+  renderPiles(); renderStrats(); renderPlayers(); renderLog();
+}
+
+function renderPiles(){
+  const wrap=el("piles"); wrap.innerHTML="";
+  const targetingPile = G.phase==="target" &&
+    ["dig","survey","bury","level_a","level_b"].includes(G.pending.mode);
+  G.piles.forEach((pile,i)=>{
+    const d=document.createElement("div"); d.className="pile";
+    if(targetingPile){
+      const ok = (G.pending.mode==="bury") ? pile.length<5 : pile.length>0;
+      if(ok){ d.classList.add("selectable"); d.onclick=()=>humanClickPile(i); }
+    }
+    const top=pileTop(pile);
+    let inner='<div class="plabel">山 '+(i+1)+'</div>';
+    if(top){
+      const c=card(top);
+      if(isKnownTo(c,0)){
+        inner+='<div class="gem top '+c.color+'">'+COLOR_JP[c.color]+'<span class="known">★</span></div>';
+      }else{
+        inner+='<div class="gem top back">?</div>';
+        inner+='<div class="hint">'+c.hint.map(col=>'<span class="hintdot" style="background:var(--c-'+col+')"></span>').join("")+'</div>';
+      }
+    }else{
+      inner+='<div class="gem top back" style="opacity:.3">空</div>';
+    }
+    inner+='<div class="count">残り <span class="mono">'+pile.length+'</span> 枚'+(pile.length===1?' ⚡2倍':'')+'</div>';
+    d.innerHTML=inner; wrap.appendChild(d);
+  });
+}
+
+function renderStrats(){
+  const wrap=el("strats"); wrap.innerHTML="";
+  const me=G.players[0];
+  const canPick = G.current===0 && G.phase==="chooseStrategy" && !G.gameOver;
+  G.strategies.forEach(s=>{
+    const d=document.createElement("div"); d.className="strat";
+    const avail=activeStrategyAvailable(s,me);
+    if(canPick && avail){ d.classList.add("avail"); d.onclick=()=>humanPickStrategy(s.key); }
+    if(!s.repeatable && s.workerBy!==null) d.classList.add("used");
+    let workerTxt="";
+    if(s.workerBy!==null && !s.repeatable) workerTxt='<div class="worker">🔒 '+G.players[s.workerBy].name+'が使用中</div>';
+    d.innerHTML='<div class="sname">'+s.name+'</div><div class="scost">C'+s.cost+'</div>'+
+      '<div class="sdesc">'+s.desc+'</div>'+workerTxt;
+    wrap.appendChild(d);
+  });
+}
+
+function renderPlayers(){
+  const wrap=el("players"); wrap.innerHTML="";
+  const targetingPlayer = G.phase==="target" &&
+    ["appraise_player","rob_player"].includes(G.pending.mode);
+  G.players.forEach(p=>{
+    const d=document.createElement("div"); d.className="pl";
+    if(p.id===G.current && !G.gameOver) d.classList.add("turn");
+    if(targetingPlayer && p.id!==0 && p.hand.length>0){
+      d.classList.add("robtarget"); d.onclick=()=>humanClickPlayer(p.id);
+    }
+    let workers=""; for(let i=0;i<2;i++) workers+='<span class="worker-dot'+(i<p.workers?'':' spent')+'"></span>';
+    let head='<div class="phead"><span>'+p.name+(p.id===0?' 🧑':' 🤖')+'</span><span>'+workers+'</span></div>';
+    let meta='<div class="meta">'+(p.id===0?('ターゲット:'+COLOR_JP[p.targetColor]+' / '):'')+'手札 '+p.hand.length+'枚</div>';
+    let hand='<div class="hand">';
+    p.hand.forEach((cid,hi)=>{
+      const c=card(cid);
+      // show face if: your own hand, OR you've appraised/known it
+      const reveal = (p.id===0) || isKnownTo(c,0);
+      if(reveal){
+        hand+='<span class="gem '+c.color+'">'+COLOR_JP[c.color]+(c.doubled?'²':'')+'</span>';
+      }else{
+        hand+='<span class="gem back">?</span>';
+      }
+    });
+    hand+='</div>';
+    d.innerHTML=head+meta+hand;
+    // hand card picking (bury / appraise_target / rob_target)
+    if(G.phase==="target"){
+      const pd=G.pending;
+      if((pd.mode==="bury"||pd.mode==="bury_hand")&&p.id===0){
+        // enable hand card pick for burying
+        const gems=d.querySelectorAll(".hand .gem");
+        gems.forEach((g,hi)=>{g.classList.add("pick");g.onclick=(e)=>{e.stopPropagation();startTarget("bury",{handIdx:hi},"埋葬先の山札を選んでください（5枚未満）");};});
+      }
+    }
+    wrap.appendChild(d);
+  });
+}
+
+function renderLog(){
+  const l=el("log");
+  l.innerHTML=G.log.slice(-40).map(e=>'<div class="'+e.cls+'">'+e.msg+'</div>').join("");
+  l.scrollTop=l.scrollHeight;
+}
+</script>
+</body>
+</html>
