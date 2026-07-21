@@ -237,17 +237,19 @@ class Dashboard extends StatelessWidget {
           const StatusBar(),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+              padding: const EdgeInsets.fromLTRB(6, 6, 6, 3),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: const [
-                  Expanded(flex: 6, child: DeckArea()),
-                  SizedBox(height: 6),
-                  Expanded(flex: 4, child: StrategyArea()),
-                  SizedBox(height: 6),
-                  Expanded(flex: 2, child: PlayerArea()),
-                  SizedBox(height: 6),
-                  Expanded(flex: 3, child: HandArea()),
+                  // 山札を主役として画面の約6割を割り当てる
+                  // （山札:戦略:プレイヤー:手札 ≒ 420:130:80:110）。
+                  Expanded(flex: 42, child: DeckArea()),
+                  SizedBox(height: 4),
+                  Expanded(flex: 13, child: StrategyArea()),
+                  SizedBox(height: 4),
+                  Expanded(flex: 8, child: PlayerArea()),
+                  SizedBox(height: 4),
+                  Expanded(flex: 11, child: HandArea()),
                 ],
               ),
             ),
@@ -270,8 +272,10 @@ class StatusBar extends ConsumerWidget {
     final awaitingDeck = yourTurn &&
         ref.watch(selectedActionProvider) != null &&
         ref.watch(selectedDeckProvider) == null;
+    final turnTooltip =
+        !yourTurn ? '${current.name}の番' : (awaitingDeck ? '発掘する山を選択' : 'あなたの番');
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
       decoration: const BoxDecoration(
         color: kPanel,
         border: Border(bottom: BorderSide(color: kGold)),
@@ -287,56 +291,26 @@ class StatusBar extends ConsumerWidget {
               icon: const Icon(Icons.menu, color: kBeige, size: 20),
             ),
             Text(
-              'ラウンド ${state.round}/∞',
+              'R${state.round}',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
             ),
-            const SizedBox(width: 6),
-            // Spacer（右側の余白）と同じ比重で余白を取り合うと、狭い画面では
-            // 「あなたの番」等が省略されてしまうため、こちらを優先的に広げる。
-            Flexible(
-              flex: 4,
+            const SizedBox(width: 8),
+            // 手番は色つきの丸だけで示す（詳細はTooltipで補足）。
+            Tooltip(
+              message: turnTooltip,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                width: 14,
+                height: 14,
                 decoration: BoxDecoration(
-                  color: yourTurn ? kSelfTurn : Colors.transparent,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        !yourTurn
-                            ? '${current.name}の番'
-                            : (awaitingDeck ? '発掘する山を選択' : 'あなたの番'),
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: yourTurn ? Colors.white : kBeige,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    if (!yourTurn) ...[
-                      const SizedBox(width: 4),
-                      const SizedBox(
-                        width: 10,
-                        height: 10,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: kBeige,
-                        ),
-                      ),
-                    ],
-                  ],
+                  shape: BoxShape.circle,
+                  color: yourTurn ? kSelfTurn : kGold.withValues(alpha: 0.4),
                 ),
               ),
             ),
-            const SizedBox(width: 6),
-            const Icon(Icons.hardware, size: 15, color: kGold),
-            const SizedBox(width: 2),
+            const SizedBox(width: 8),
+            const Icon(Icons.hardware, size: 14, color: kGold),
             Text(
-              '${current.workers}/${PlayerState.kWorkersPerPlayer}',
+              '${current.workers}',
               style: const TextStyle(
                   color: kGold, fontWeight: FontWeight.bold, fontSize: 12),
             ),
@@ -476,17 +450,17 @@ class _DeckCardState extends ConsumerState<DeckCard> {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // 背面に2枚重ねて、山札らしい厚みを出す。
+                // 背面に3枚重ねて、山札らしい厚みを出す。
                 if (!deck.isEmpty)
-                  for (var i = 2; i >= 1; i--)
+                  for (var i = 3; i >= 1; i--)
                     Positioned(
-                      left: i * 3.0,
-                      top: i * 3.0,
-                      right: -i * 3.0,
-                      bottom: -i * 3.0,
+                      left: i * 4.0,
+                      top: i * 4.0,
+                      right: -i * 4.0,
+                      bottom: -i * 4.0,
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: kBeige.withValues(alpha: 0.6),
+                          color: kBeige.withValues(alpha: 0.75 - i * 0.1),
                           borderRadius: BorderRadius.circular(7),
                           border: Border.all(
                               color: const Color(0xff9a8a63), width: 1.4),
@@ -526,51 +500,68 @@ class _DeckCardState extends ConsumerState<DeckCard> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         CircleAvatar(
-                          radius: 11,
+                          radius: 15,
                           backgroundColor: const Color(0xff6a5e49),
                           child: Text(
                             '${index + 1}',
                             style: const TextStyle(
-                                color: Colors.white, fontSize: 12),
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold),
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 5),
                         SizedBox(
-                          width: 40,
-                          height: 40,
+                          width: 58,
+                          height: 58,
                           child: Center(
                             child: deck.isEmpty
                                 ? const Icon(Icons.remove_circle_outline,
-                                    color: Colors.black26, size: 28)
-                                : GemIcon(gem: deck.top, size: 34),
+                                    color: Colors.black26, size: 40)
+                                : GemIcon(gem: deck.top, size: 50),
                           ),
                         ),
                         if (!deck.isEmpty) ...[
-                          Wrap(
-                            spacing: 3,
-                            alignment: WrapAlignment.center,
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              for (final g in hints)
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: g.color,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                        color: Colors.black45, width: 0.6),
-                                  ),
+                              const Text(
+                                'DAI',
+                                style: TextStyle(
+                                  color: Colors.black54,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
                                 ),
+                              ),
+                              const SizedBox(width: 3),
+                              Wrap(
+                                spacing: 3,
+                                alignment: WrapAlignment.center,
+                                children: [
+                                  for (final g in hints)
+                                    Container(
+                                      width: 10,
+                                      height: 10,
+                                      decoration: BoxDecoration(
+                                        color: g.color,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                            color: Colors.black45, width: 0.6),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ],
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 3),
                         ],
                         Text(
                           '残り${deck.count}枚',
                           style: const TextStyle(
                             color: Colors.black,
                             fontWeight: FontWeight.bold,
-                            fontSize: 11,
+                            fontSize: 13,
                           ),
                         ),
                       ],
@@ -949,49 +940,56 @@ class ActionCard extends ConsumerWidget {
                 ActionState.used || ActionState.insufficientWorkers => 0.6,
                 ActionState.usable || ActionState.selected => 1,
               },
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
+              // ゲーム中はアイコン・カード名・コスト・使用状態だけで十分。
+              // 説明文と挿絵はshowActionDetailDialog（長押し）に譲り、
+              // カードの高さを大きく抑える。狭い画面でも収まるよう
+              // FittedBoxで包む（Expandedは使わない）。
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(data.icon, size: 14, color: kGold),
+                        const SizedBox(width: 4),
+                        Text(
                           data.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                               fontSize: 13, fontWeight: FontWeight.bold),
                         ),
-                      ),
-                      CircleAvatar(
-                        radius: 9,
-                        backgroundColor: kBackground,
-                        child: Text(
-                          '${data.cost}',
-                          style: const TextStyle(
-                              color: kGold,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Expanded(
-                    child: Center(
-                      child: Image.asset(data.image, fit: BoxFit.contain),
+                      ],
                     ),
-                  ),
-                  Text(
-                    caption,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: captionColor,
-                      fontWeight: FontWeight.bold,
+                    const SizedBox(height: 3),
+                    CircleAvatar(
+                      radius: 8,
+                      backgroundColor: kBackground,
+                      child: Text(
+                        '${data.cost}',
+                        style: const TextStyle(
+                            color: kGold,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 3),
+                    Text(
+                      caption,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: captionColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1018,6 +1016,11 @@ void showActionDetailDialog(BuildContext context, ActionData data) {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          SizedBox(
+            height: 90,
+            child: Center(child: Image.asset(data.image, fit: BoxFit.contain)),
+          ),
+          const SizedBox(height: 8),
           Text('コスト：ワーカー${data.cost}個', style: const TextStyle(color: kBeige)),
           const SizedBox(height: 8),
           Text(data.description, style: const TextStyle(color: kBeige)),
@@ -1135,22 +1138,35 @@ class PlayerTile extends StatelessWidget {
                         ),
                       ),
                     ),
-                  playerAvatar(player, 14),
-                  Text(
-                    player.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    '手札 ${player.hand.length}',
-                    style: const TextStyle(color: kBeige, fontSize: 10),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      playerAvatar(player, 10),
+                      const SizedBox(width: 3),
+                      Text(
+                        player.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.hardware, size: 10, color: kGold),
+                      const Icon(Icons.diamond, size: 9, color: kGold),
+                      const SizedBox(width: 2),
+                      Text(
+                        '${player.hand.length}',
+                        style: const TextStyle(color: kBeige, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.hardware, size: 9, color: kGold),
                       const SizedBox(width: 2),
                       Text(
                         '${player.workers}/${PlayerState.kWorkersPerPlayer}',
@@ -1202,24 +1218,25 @@ class HandArea extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 3),
+          // 手札上限（kHandLimit）ぶんのスロットを常に表示する。埋まって
+          // いない分は空きスロットとして見せ、手札上限＝ゲーム終了条件が
+          // 一目でわかるようにする。
           Expanded(
-            child: viewed.hand.isEmpty
-                ? const Center(
-                    child: Text('まだ宝石がありません。',
-                        style: TextStyle(color: kBeige, fontSize: 12)),
-                  )
-                : ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: viewed.hand.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 5),
-                    itemBuilder: (_, i) => self || viewed.hand[i].revealedToSelf
-                        ? HandTile(
-                            ownerIndex: viewedIndex,
-                            index: i,
-                            card: viewed.hand[i],
-                          )
-                        : const HandBackTile(),
-                  ),
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: kHandLimit,
+              separatorBuilder: (_, __) => const SizedBox(width: 5),
+              itemBuilder: (_, i) {
+                if (i >= viewed.hand.length) return const HandEmptySlot();
+                return self || viewed.hand[i].revealedToSelf
+                    ? HandTile(
+                        ownerIndex: viewedIndex,
+                        index: i,
+                        card: viewed.hand[i],
+                      )
+                    : const HandBackTile();
+              },
+            ),
           ),
         ],
       ),
@@ -1307,6 +1324,22 @@ class HandBackTile extends StatelessWidget {
         ),
         child: const Center(
           child: Icon(Icons.diamond, color: kGold, size: 20),
+        ),
+      );
+}
+
+/// 手札上限のうち、まだカードが入っていない空きスロット
+/// （手札上限に達するとゲーム終了、という条件を視覚的に伝える）。
+class HandEmptySlot extends StatelessWidget {
+  const HandEmptySlot({super.key});
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 48,
+        height: 64,
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: kGold.withValues(alpha: 0.3), width: 1.5),
         ),
       );
 }
