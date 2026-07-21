@@ -291,9 +291,12 @@ class StatusBar extends ConsumerWidget {
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
             ),
             const SizedBox(width: 6),
+            // Spacer（右側の余白）と同じ比重で余白を取り合うと、狭い画面では
+            // 「あなたの番」等が省略されてしまうため、こちらを優先的に広げる。
             Flexible(
+              flex: 4,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
                   color: yourTurn ? kSelfTurn : Colors.transparent,
                   borderRadius: BorderRadius.circular(4),

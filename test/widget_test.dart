@@ -2,6 +2,7 @@ import 'package:fakedigger/game/game_controller.dart';
 import 'package:fakedigger/game/models.dart';
 import 'package:fakedigger/main.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -304,6 +305,33 @@ void main() {
     expect(find.byType(StrategyArea), findsOneWidget);
     expect(find.byType(PlayerArea), findsOneWidget);
     expect(find.byType(HandArea), findsOneWidget);
+
+    await drainTurnTimers(tester);
+  });
+
+  testWidgets('基準画面サイズ390×844で「あなたの番」表示が省略されない', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(wrapGameScreen());
+    await tester.pump();
+
+    final textWidget = tester.widget<Text>(find.text('あなたの番'));
+    final renderParagraph = tester.renderObject<RenderParagraph>(
+      find.text('あなたの番'),
+    );
+    // 実際にレイアウトで与えられた幅（省略される前の制約）に対して、
+    // 同じ文字列・スタイルで改めてレイアウトし、本当に収まるかを確認する。
+    final painter = TextPainter(
+      text: TextSpan(text: textWidget.data, style: textWidget.style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: renderParagraph.constraints.maxWidth);
+    expect(painter.didExceedMaxLines, isFalse,
+        reason: '「あなたの番」が省略表示（...）になっている');
 
     await drainTurnTimers(tester);
   });
