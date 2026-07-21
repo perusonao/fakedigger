@@ -84,14 +84,17 @@ void main() {
     await drainTurnTimers(tester);
   });
 
-  testWidgets('各プレイヤーにターゲット宝石アイコンが表示される', (tester) async {
+  testWidgets('プレイヤー表示エリアはコンパクトで、ターゲット色は表示しない', (tester) async {
     await tester.pumpWidget(wrapGameScreen());
     await tester.pump();
+    // ターゲットは常時表示せず、下部ナビゲーションのBottomSheetでのみ見せる
+    // （プレイヤー表示エリアの圧縮に伴い、ターゲット色のヒントアイコンは廃止）。
     final diamonds = find.descendant(
       of: find.byType(PlayerTile),
       matching: find.byIcon(Icons.diamond),
     );
-    expect(diamonds, findsNWidgets(4));
+    expect(diamonds, findsNothing);
+    expect(find.byType(PlayerTile), findsNWidgets(4));
     await drainTurnTimers(tester);
   });
 
@@ -283,6 +286,44 @@ void main() {
       await drainTurnTimers(tester);
     });
   }
+
+  testWidgets('基準画面サイズ390×844（SafeArea込み）でスクロールなしに収まる', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.padding =
+        const FakeViewPadding(top: 47, bottom: 34); // ノッチ・ホームインジケータ相当
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+
+    await tester.pumpWidget(wrapGameScreen());
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    expect(find.byType(DeckArea), findsOneWidget);
+    expect(find.byType(StrategyArea), findsOneWidget);
+    expect(find.byType(PlayerArea), findsOneWidget);
+    expect(find.byType(HandArea), findsOneWidget);
+
+    await drainTurnTimers(tester);
+  });
+
+  testWidgets('戦略カードを長押しすると説明ダイアログが表示される（カード面には説明文を出さない）', (tester) async {
+    await tester.pumpWidget(wrapGameScreen());
+    await tester.pump();
+
+    // カード面には説明文を表示しない。
+    expect(find.text('山札の1番上のカードを手札に加える'), findsNothing);
+
+    await tester.longPress(find.text('発掘').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('山札の1番上のカードを手札に加える'), findsOneWidget);
+    await tester.tap(find.text('閉じる'));
+    await tester.pumpAndSettle();
+
+    await drainTurnTimers(tester);
+  });
 
   testWidgets('タブレット幅では中央寄せの最大幅で表示される', (tester) async {
     tester.view.physicalSize = const Size(1200, 900);
