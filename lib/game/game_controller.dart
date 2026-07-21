@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'models.dart';
+
+/// 自分（index 0）以外は全員CPU（仮実装）。CPUが手を打つまでの待ち時間。
+const kCpuThinkDelay = Duration(milliseconds: 700);
 
 /// ゲーム終了となる手札枚数。
 const kHandLimit = 6;
@@ -70,11 +74,21 @@ GameState createInitialGame({Random? random}) {
 }
 
 class GameController extends Notifier<GameState> {
-  GameController({Random? random}) : _random = random;
+  GameController({Random? random, this.cpuThinkDelay = kCpuThinkDelay})
+      : _random = random,
+        _cpuRandom = random ?? Random();
   final Random? _random;
+  final Random _cpuRandom;
+
+  /// CPUが手を打つまでの待ち時間（テストでは短く上書きできる）。
+  final Duration cpuThinkDelay;
+  Timer? _cpuTimer;
 
   @override
-  GameState build() => createInitialGame(random: _random);
+  GameState build() {
+    ref.onDispose(() => _cpuTimer?.cancel());
+    return createInitialGame(random: _random);
+  }
 
   /// 現在の手番プレイヤーが [deckIndex] の山札を発掘する。
   ///
@@ -105,6 +119,27 @@ class GameController extends Notifier<GameState> {
     state = state.copyWith(decks: decks, players: players);
     _checkEnd();
     if (!state.isOver) _advanceTurn();
+    _scheduleCpuTurnIfNeeded();
+  }
+
+  /// 自分（index 0）以外の手番なら、CPU（仮実装）として少し待ってから
+  /// ランダムな山札を発掘する。実装済みのアクションが発掘のみのため、
+  /// CPUの行動も発掘だけとする。
+  void _scheduleCpuTurnIfNeeded() {
+    _cpuTimer?.cancel();
+    if (state.isOver || state.currentPlayer == 0) return;
+    _cpuTimer = Timer(cpuThinkDelay, cpuAutoDig);
+  }
+
+  /// CPU（自分以外）の手番であれば、ランダムな空でない山札を発掘する。
+  void cpuAutoDig() {
+    if (state.isOver || state.currentPlayer == 0) return;
+    final candidates = [
+      for (var i = 0; i < state.decks.length; i++)
+        if (!state.decks[i].isEmpty) i,
+    ];
+    if (candidates.isEmpty) return;
+    dig(candidates[_cpuRandom.nextInt(candidates.length)]);
   }
 
   /// 手番プレイヤーがワーカーを使わずに手番を飛ばす（打てるアクションがない等）。
@@ -160,7 +195,10 @@ class GameController extends Notifier<GameState> {
   }
 
   /// ゲームを最初からやり直す。
-  void reset() => state = createInitialGame(random: _random);
+  void reset() {
+    _cpuTimer?.cancel();
+    state = createInitialGame(random: _random);
+  }
 }
 
 final gameProvider =
