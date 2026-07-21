@@ -154,9 +154,10 @@ class Dashboard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return const Column(
       children: [
-        PlayerBar(),
-        // 盤面（山札）を主役として最大化。戦略カード・手札は下部バーからモーダルで開く。
-        // ターゲット確認・推理メモは、盤面上のボタンからいつでも開ける。
+        // 盤面（山札）を主役として最大化。プレイヤー表示はその下に配置し、
+        // アイコンタップで各自の手札モーダルを開ける（自分はおもて、他は裏）。
+        // 戦略カードは下部バーからモーダルで開く。ターゲット確認・推理メモは
+        // 盤面上のボタンからいつでも開ける。
         Expanded(
           child: SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(8, 8, 8, 8),
@@ -166,6 +167,8 @@ class Dashboard extends ConsumerWidget {
                 StatusBar(),
                 SizedBox(height: 8),
                 BoardPanel(),
+                SizedBox(height: 8),
+                PlayerBar(),
               ],
             ),
           ),
@@ -176,52 +179,40 @@ class Dashboard extends ConsumerWidget {
   }
 }
 
-/// 下部固定バー。戦略カード一覧・自分の手札をモーダルで開く。
-/// ターゲット・メモは盤面上に既にボタンがあるためここには置かない。
+/// 下部固定バー。戦略カード一覧をモーダルで開く。
+/// 自分の手札はプレイヤーバーの自分アイコンをタップして確認できるため、
+/// ターゲット・メモと同様にここには置かない。
 class BottomActionBar extends ConsumerWidget {
   const BottomActionBar({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final hand = ref.watch(
-      gameProvider.select((s) => s.players[0].hand.length),
-    );
-    Widget item(IconData icon, String label, VoidCallback onTap) => Expanded(
+  Widget build(BuildContext context, WidgetRef ref) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xff050a0d),
+          border: Border(top: BorderSide(color: gold)),
+        ),
+        child: SafeArea(
+          top: false,
           child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+            onTap: () => showStrategySheet(context, ref),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(icon, color: gold, size: 22),
-                  const SizedBox(height: 2),
-                  Text(label,
-                      style: const TextStyle(color: parchment, fontSize: 11)),
+                  Icon(Icons.style, color: gold, size: 22),
+                  SizedBox(height: 2),
+                  Text('戦略カード',
+                      style: TextStyle(color: parchment, fontSize: 11)),
                 ],
               ),
             ),
           ),
-        );
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xff050a0d),
-        border: Border(top: BorderSide(color: gold)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: [
-            item(Icons.style, '戦略カード', () => showStrategySheet(context, ref)),
-            item(Icons.back_hand, '手札 $hand/$kHandLimit',
-                () => showHandSheet(context, ref, 0)),
-          ],
         ),
-      ),
-    );
-  }
+      );
 }
 
-/// 上部の全プレイヤー表示（自分バッジ・手番強調・ターゲット色・手札/ワーカー枚数）。
+/// 山札の下に表示する全プレイヤー一覧
+/// （自分バッジ・手番強調・ターゲット色・手札/ワーカー枚数）。
 class PlayerBar extends ConsumerWidget {
   const PlayerBar({super.key});
   @override
@@ -229,7 +220,6 @@ class PlayerBar extends ConsumerWidget {
     final players = ref.watch(gameProvider.select((s) => s.players));
     final current = ref.watch(gameProvider.select((s) => s.currentPlayer));
     return Container(
-      margin: const EdgeInsets.fromLTRB(8, 8, 8, 0),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xff050a0d),
@@ -634,36 +624,51 @@ class DeckCard extends ConsumerWidget {
 }
 
 /// 戦略カードを縦2列のグリッドで、スワイプなしに全部並べる。
+/// 戦略カードの行数・列数（10枚 = 2列 × 5行）。
+const _kStrategyCols = 2;
+const _kStrategyRows = 5;
+const _kStrategySpacing = 8.0;
+
 class StrategyGrid extends StatelessWidget {
   const StrategyGrid({super.key});
   @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            '戦略カード（タップして使用）',
-            style: TextStyle(
-              color: parchment,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 10),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.92,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-            ),
-            itemCount: kStrategyActions.length,
-            itemBuilder: (_, i) =>
-                ActionCard(index: i, data: kStrategyActions[i]),
-          ),
-        ],
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          const titleHeight = 26.0;
+          // 与えられた高さぴったりに10枚を収め、スクロールを不要にする。
+          final gridHeight = constraints.maxHeight - titleHeight - 8;
+          final rowHeight =
+              (gridHeight - _kStrategySpacing * (_kStrategyRows - 1)) /
+                  _kStrategyRows;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '戦略カード（タップして使用）',
+                style: TextStyle(
+                  color: parchment,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: GridView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: _kStrategyCols,
+                    mainAxisExtent: rowHeight,
+                    crossAxisSpacing: _kStrategySpacing,
+                    mainAxisSpacing: _kStrategySpacing,
+                  ),
+                  itemCount: kStrategyActions.length,
+                  itemBuilder: (_, i) =>
+                      ActionCard(index: i, data: kStrategyActions[i]),
+                ),
+              ),
+            ],
+          );
+        },
       );
 }
 
@@ -792,21 +797,19 @@ void showMemoSheet(BuildContext context, WidgetRef ref) {
   );
 }
 
-/// 戦略カード一覧をモーダルで開く（縦スクロールのドラッグシート、横スワイプなし）。
+/// 戦略カード一覧をモーダルで開く。コンパクトなカードで、
+/// スクロールなしに10枚すべてが1画面に収まる高さで表示する。
 void showStrategySheet(BuildContext context, WidgetRef ref) {
+  final sheetHeight = MediaQuery.of(context).size.height * 0.78;
   showModalBottomSheet<void>(
     context: context,
     backgroundColor: panel,
     isScrollControlled: true,
-    builder: (_) => DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.85,
-      minChildSize: 0.5,
-      maxChildSize: 0.95,
-      builder: (context, scrollController) => SingleChildScrollView(
-        controller: scrollController,
-        padding: const EdgeInsets.all(12),
-        child: const StrategyGrid(),
+    builder: (_) => SizedBox(
+      height: sheetHeight,
+      child: const Padding(
+        padding: EdgeInsets.all(12),
+        child: StrategyGrid(),
       ),
     ),
   );
@@ -936,7 +939,7 @@ class ActionCard extends ConsumerWidget {
             : null,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           decoration: BoxDecoration(
             // 使用可能は中明度、準備中は暗く沈める。
             color: usable ? const Color(0xff16303b) : const Color(0xff0b141a),
@@ -963,19 +966,19 @@ class ActionCard extends ConsumerWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 16,
+                          fontSize: 13,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                     CircleAvatar(
-                      radius: 14,
+                      radius: 10,
                       backgroundColor: ink,
                       child: Text(
                         '${data.cost}',
                         style: const TextStyle(
                           color: gold,
-                          fontSize: 15,
+                          fontSize: 11,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -984,20 +987,16 @@ class ActionCard extends ConsumerWidget {
                 ),
                 Expanded(
                   child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Image.asset(data.image, fit: BoxFit.contain),
-                    ),
+                    child: Image.asset(data.image, fit: BoxFit.contain),
                   ),
                 ),
                 Text(
                   usable ? data.description : '準備中',
                   textAlign: TextAlign.center,
-                  maxLines: 3,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    height: 1.3,
-                    fontSize: 11,
+                    fontSize: 9,
                     color: usable ? Colors.white : gold,
                     fontWeight: usable ? FontWeight.normal : FontWeight.bold,
                   ),

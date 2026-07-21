@@ -44,25 +44,44 @@ void main() {
     expect(diamonds, findsNWidgets(4));
   });
 
-  testWidgets('下部バーには戦略カードと手札のみ（ターゲット・メモは無し）', (tester) async {
+  testWidgets('下部バーには戦略カードのみ（手札・ターゲット・メモは無し）', (tester) async {
     await tester.pumpWidget(
       const ProviderScope(child: MaterialApp(home: GameScreen())),
     );
-    expect(find.text('戦略カード'), findsOneWidget);
-    expect(find.textContaining('手札'), findsWidgets);
-    final bottomBarTargetIcon = find.descendant(
-      of: find.byType(BottomActionBar),
-      matching: find.byIcon(Icons.diamond),
+    final bar = find.byType(BottomActionBar);
+    expect(
+      find.descendant(of: bar, matching: find.byIcon(Icons.style)),
+      findsOneWidget,
     );
-    expect(bottomBarTargetIcon, findsNothing);
-    final bottomBarMemoIcon = find.descendant(
-      of: find.byType(BottomActionBar),
-      matching: find.byIcon(Icons.edit_note),
+    expect(
+      find.descendant(of: bar, matching: find.byIcon(Icons.back_hand)),
+      findsNothing,
     );
-    expect(bottomBarMemoIcon, findsNothing);
+    expect(
+      find.descendant(of: bar, matching: find.byIcon(Icons.diamond)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: bar, matching: find.byIcon(Icons.edit_note)),
+      findsNothing,
+    );
+  });
+
+  testWidgets('プレイヤー一覧は山札の下に表示される', (tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: GameScreen())),
+    );
+    final boardCenter = tester.getCenter(find.byType(BoardPanel));
+    final playerBarCenter = tester.getCenter(find.byType(PlayerBar));
+    expect(playerBarCenter.dy, greaterThan(boardCenter.dy));
   });
 
   testWidgets('プレイヤーをタップすると手札モーダル。自分はおもて、他は裏', (tester) async {
+    tester.view.physicalSize = const Size(450, 1800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final container = ProviderContainer();
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -80,6 +99,7 @@ void main() {
     expect(tiles, findsNWidgets(4));
 
     // 自分（先頭）のアイコンをタップ → おもて（HandTile）が見える。
+    await tester.ensureVisible(tiles.at(0));
     await tester.tap(tiles.at(0));
     await tester.pumpAndSettle();
     expect(find.byType(HandTile), findsOneWidget);
@@ -88,6 +108,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 他プレイヤーのアイコンをタップ → 裏向き（HandBackTile）のみ。
+    await tester.ensureVisible(tiles.at(1));
     await tester.tap(tiles.at(1));
     await tester.pumpAndSettle();
     expect(find.byType(HandBackTile), findsOneWidget);
@@ -106,5 +127,6 @@ void main() {
     ]) {
       expect(find.text(title), findsOneWidget);
     }
+    expect(tester.takeException(), isNull);
   });
 }
