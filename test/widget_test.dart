@@ -83,6 +83,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final container = ProviderContainer();
+    addTearDown(container.dispose);
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,

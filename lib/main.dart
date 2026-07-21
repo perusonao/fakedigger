@@ -392,13 +392,29 @@ class StatusBar extends ConsumerWidget {
               color: yourTurn ? const Color(0xff123a33) : Colors.transparent,
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Text(
-              yourTurn ? 'あなたの番' : '${current.name}の番',
-              style: TextStyle(
-                color: yourTurn ? teal : parchment,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  yourTurn ? 'あなたの番' : '${current.name}の番',
+                  style: TextStyle(
+                    color: yourTurn ? teal : parchment,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                if (!yourTurn) ...[
+                  const SizedBox(width: 6),
+                  const SizedBox(
+                    width: 11,
+                    height: 11,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: parchment,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(width: 10),
@@ -433,8 +449,11 @@ class BoardPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(gameProvider);
-    final canDig =
-        !state.isOver && state.players[state.currentPlayer].workers > 0;
+    // 自分（index 0）の手番のときだけ操作できる。CPU（他プレイヤー）の
+    // 手番は自動で進む（仮実装）。
+    final canDig = !state.isOver &&
+        state.currentPlayer == 0 &&
+        state.players[0].workers > 0;
     return GoldPanel(
       padding: const EdgeInsets.all(8),
       child: Column(
