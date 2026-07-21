@@ -20,6 +20,16 @@ final memoProvider = StateProvider<String>(
   (ref) => '① 赤 ×　青 ?　黒 ○\n② 赤 ○　青 ?　白 ?\n③ 黄 ?　黒 ○\n④ 青 ?　白 ○',
 );
 
+/// 自分の手番の進行段階。
+/// none: 戦略を選ぶ前（山札はまだ選べない） /
+/// awaitingDeck: 「発掘」を選んだ後、発掘する山札の選択待ち。
+enum TurnStep { none, awaitingDeck }
+
+final turnStepProvider = StateProvider<TurnStep>((ref) => TurnStep.none);
+
+/// SnackBarを表示するための、Scaffoldツリーに依存しないグローバルキー。
+final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
 const ink = Color(0xff071117);
 const panel = Color(0xff0d1a22);
 const gold = Color(0xffc69a45);
@@ -41,6 +51,7 @@ class FakeDiggerApp extends ConsumerWidget {
   const FakeDiggerApp({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) => MaterialApp.router(
+        scaffoldMessengerKey: scaffoldMessengerKey,
         debugShowCheckedModeBanner: false,
         title: 'FakeDigger',
         theme: ThemeData(
@@ -59,18 +70,90 @@ class FakeDiggerApp extends ConsumerWidget {
 
 /// スマホ向けの一画面ダッシュボード。
 /// 上部プレイヤーバー／盤面（主役）、下部バーから戦略カード・手札をモーダルで開く。
-class GameScreen extends ConsumerWidget {
+///
+/// 手番の進行も本ウィジェットが司る。自分（index 0）の手番になるたび
+/// 戦略モーダルを自動で開き、「発掘」選択→山札選択→確認→結果表示という
+/// 一連の流れをガイドする。CPU（他プレイヤー）の手番は、少し待ってから
+/// 対象の山札を強調表示し、発掘して結果を裏向きで告知する。
+class GameScreen extends ConsumerStatefulWidget {
   const GameScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<GameScreen> createState() => _GameScreenState();
+}
+
+class _GameScreenState extends ConsumerState<GameScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _handleTurn(ref.read(gameProvider).currentPlayer);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     ref.listen(gameProvider.select((s) => s.isOver), (prev, next) {
       if (next && prev != true) _showResult(context, ref);
+    });
+    ref.listen(gameProvider.select((s) => s.currentPlayer), (_, next) {
+      _handleTurn(next);
     });
 
     return const Scaffold(
       backgroundColor: ink,
       body: SafeArea(child: Dashboard()),
+    );
+  }
+
+  void _handleTurn(int player) {
+    if (ref.read(gameProvider).isOver) return;
+    if (isSelf(player)) {
+      _runSelfTurn();
+    } else {
+      _runCpuTurn(player);
+    }
+  }
+
+  /// ①自分の手番になる ②戦略モーダルを自動で開く。
+  /// （③〜⑨はモーダル内・盤面での操作に応じてActionCard/DeckCardが担う）
+  Future<void> _runSelfTurn() async {
+    ref.read(turnStepProvider.notifier).state = TurnStep.none;
+    await Future.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return;
+    showStrategySheet(context, ref);
+  }
+
+  /// CPUの手番：③山札を強調 → 発掘 → ④⑤裏向きで告知（⑥手札に加わるのは dig() 側）。
+  Future<void> _runCpuTurn(int player) async {
+    await Future.delayed(kCpuThinkDelay);
+    if (!mounted) return;
+    final controller = ref.read(gameProvider.notifier);
+    var state = ref.read(gameProvider);
+    if (state.isOver || state.currentPlayer != player) return;
+    final deckIndex = controller.pickCpuDeck();
+    if (deckIndex == null) return;
+
+    ref.read(selectedDeckProvider.notifier).state = deckIndex;
+    await Future.delayed(kCpuHighlightDelay);
+    if (!mounted) return;
+    state = ref.read(gameProvider);
+    if (state.isOver || state.currentPlayer != player) return;
+
+    final name = state.players[player].name;
+    controller.dig(deckIndex);
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(
+        duration: const Duration(milliseconds: 1400),
+        backgroundColor: panel,
+        content: Row(
+          children: [
+            const Icon(Icons.diamond, color: gold, size: 20),
+            const SizedBox(width: 10),
+            Text('$nameは『発掘』しました', style: const TextStyle(color: parchment)),
+          ],
+        ),
+      ),
     );
   }
 
@@ -376,6 +459,8 @@ class StatusBar extends ConsumerWidget {
     final state = ref.watch(gameProvider);
     final current = state.players[state.currentPlayer];
     final yourTurn = state.currentPlayer == 0;
+    final awaitingDeck =
+        yourTurn && ref.watch(turnStepProvider) == TurnStep.awaitingDeck;
     final monopoly = state.decks.indexWhere((d) => d.monopolizedBy != null);
     return GoldPanel(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -396,7 +481,9 @@ class StatusBar extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  yourTurn ? 'あなたの番' : '${current.name}の番',
+                  !yourTurn
+                      ? '${current.name}の番'
+                      : (awaitingDeck ? '発掘する山を選択' : 'あなたの番'),
                   style: TextStyle(
                     color: yourTurn ? teal : parchment,
                     fontWeight: FontWeight.bold,
@@ -449,11 +536,12 @@ class BoardPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(gameProvider);
-    // 自分（index 0）の手番のときだけ操作できる。CPU（他プレイヤー）の
-    // 手番は自動で進む（仮実装）。
+    // 自分（index 0）の手番で、かつ戦略モーダルで「発掘」を選んだ後だけ
+    // 山札をタップできる。CPU（他プレイヤー）の手番は自動で進む（仮実装）。
     final canDig = !state.isOver &&
         state.currentPlayer == 0 &&
-        state.players[0].workers > 0;
+        state.players[0].workers > 0 &&
+        ref.watch(turnStepProvider) == TurnStep.awaitingDeck;
     return GoldPanel(
       padding: const EdgeInsets.all(8),
       child: Column(
@@ -551,12 +639,7 @@ class DeckCard extends ConsumerWidget {
       selected: selected,
       label: '山札${index + 1}、${deck.count}枚',
       child: InkWell(
-        onTap: enabled
-            ? () {
-                ref.read(selectedDeckProvider.notifier).state = index;
-                ref.read(gameProvider.notifier).dig(index);
-              }
-            : null,
+        onTap: enabled ? () => confirmAndDig(context, ref, index) : null,
         borderRadius: BorderRadius.circular(8),
         child: Stack(
           clipBehavior: Clip.none,
@@ -689,6 +772,62 @@ class StrategyGrid extends StatelessWidget {
           );
         },
       );
+}
+
+/// ⑥山札をタップ →⑦確認ダイアログ→（YES）⑧発掘した宝石をおもてで告知
+/// →⑨手札に加わる。（NO）なら何も起きず、山札を選び直せる。
+Future<void> confirmAndDig(
+  BuildContext context,
+  WidgetRef ref,
+  int index,
+) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: panel,
+      title: const Text('発掘'),
+      content: Text('この山（山札${index + 1}）を『発掘』しますか？'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('やめる'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('発掘する'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true) return;
+
+  ref.read(selectedDeckProvider.notifier).state = index;
+  ref.read(gameProvider.notifier).dig(index);
+  ref.read(turnStepProvider.notifier).state = TurnStep.none;
+
+  final card = ref.read(gameProvider).players[0].hand.last;
+  scaffoldMessengerKey.currentState?.showSnackBar(
+    SnackBar(
+      duration: const Duration(milliseconds: 1400),
+      backgroundColor: panel,
+      content: Row(
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              color: card.gem.color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.black),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text('${card.gem.label}の宝石を発掘しました！',
+              style: const TextStyle(color: parchment)),
+        ],
+      ),
+    ),
+  );
 }
 
 /// [playerIndex] の手札を確認するモーダル。
@@ -954,7 +1093,14 @@ class ActionCard extends ConsumerWidget {
       selected: selected,
       child: InkWell(
         onTap: usable
-            ? () => ref.read(selectedActionProvider.notifier).state = index
+            ? () {
+                // ②③『発掘』をタップ →④戦略モーダルを閉じ、
+                // ⑤山札選択の待ち状態にする（このカードは今のところ発掘のみ）。
+                ref.read(selectedActionProvider.notifier).state = index;
+                ref.read(turnStepProvider.notifier).state =
+                    TurnStep.awaitingDeck;
+                Navigator.of(context).pop();
+              }
             : null,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
