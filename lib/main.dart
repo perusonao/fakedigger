@@ -16,9 +16,6 @@ final routerProvider = Provider<GoRouter>(
 
 final selectedActionProvider = StateProvider<int?>((ref) => null);
 final selectedDeckProvider = StateProvider<int?>((ref) => null);
-
-/// 手札のおもてを表示中のインデックス（手番が変わるとリセット）。
-final revealedHandProvider = StateProvider<Set<int>>((ref) => <int>{});
 final memoProvider = StateProvider<String>(
   (ref) => '① 赤 ×　青 ?　黒 ○\n② 赤 ○　青 ?　白 ?\n③ 黄 ?　黒 ○\n④ 青 ?　白 ○',
 );
@@ -29,6 +26,9 @@ const gold = Color(0xffc69a45);
 const parchment = Color(0xffe5d5ad);
 const teal = Color(0xff72e1c1);
 
+/// プレイヤー一覧の先頭（index 0）が、このデバイスを操作する「自分」。
+bool isSelf(int index) => index == 0;
+
 /// プレイヤーの立ち絵（画像があれば画像、なければ文字）を丸く表示する。
 Widget playerAvatar(PlayerState p, double radius) => CircleAvatar(
       radius: radius,
@@ -36,58 +36,6 @@ Widget playerAvatar(PlayerState p, double radius) => CircleAvatar(
       foregroundImage: p.image == null ? null : AssetImage(p.image!),
       child: Text(p.avatar),
     );
-
-/// 画面レイアウト。null（未設定）のときは画面の縦横比から自動判定する。
-enum AppLayout { landscape, portrait }
-
-final layoutProvider = StateProvider<AppLayout?>((ref) => null);
-
-/// 明示指定があればそれを、なければ画面比から自動でレイアウトを決める。
-AppLayout effectiveLayout(BuildContext context, WidgetRef ref) =>
-    ref.watch(layoutProvider) ??
-    (MediaQuery.of(context).size.aspectRatio < 1
-        ? AppLayout.portrait
-        : AppLayout.landscape);
-
-/// 縦・横レイアウトを手動で切り替える（コールバックから呼ぶため watch は使わない）。
-void toggleLayout(BuildContext context, WidgetRef ref) {
-  final auto = MediaQuery.of(context).size.aspectRatio < 1
-      ? AppLayout.portrait
-      : AppLayout.landscape;
-  final current = ref.read(layoutProvider) ?? auto;
-  ref.read(layoutProvider.notifier).state =
-      current == AppLayout.portrait ? AppLayout.landscape : AppLayout.portrait;
-}
-
-/// ヘッダー右側の操作アイコン（レイアウト切替・手札・ログ・設定）。
-List<Widget> headerActions(BuildContext context, WidgetRef ref) {
-  final portrait = effectiveLayout(context, ref) == AppLayout.portrait;
-  return [
-    IconButton(
-      tooltip: portrait ? '横レイアウトに切替' : '縦レイアウトに切替',
-      onPressed: () => toggleLayout(context, ref),
-      icon: Icon(
-        portrait ? Icons.stay_current_landscape : Icons.stay_current_portrait,
-        color: gold,
-      ),
-    ),
-    IconButton(
-      tooltip: 'あなたの手札',
-      onPressed: () => showHandSheet(context, ref),
-      icon: const Icon(Icons.style, color: gold),
-    ),
-    const IconButton(
-      tooltip: 'ログ',
-      onPressed: null,
-      icon: Icon(Icons.receipt_long, color: gold),
-    ),
-    const IconButton(
-      tooltip: '設定',
-      onPressed: null,
-      icon: Icon(Icons.settings, color: gold),
-    ),
-  ];
-}
 
 class FakeDiggerApp extends ConsumerWidget {
   const FakeDiggerApp({super.key});
@@ -109,8 +57,8 @@ class FakeDiggerApp extends ConsumerWidget {
       );
 }
 
-/// スクロールなしの一画面レイアウト。
-/// ヘッダー / [左パネル | 山札8山 | ターゲット] / 戦略カード の縦3段構成。
+/// スマホ向けの一画面ダッシュボード。
+/// 上部プレイヤーバー／盤面（主役）、下部バーから戦略カード・手札をモーダルで開く。
 class GameScreen extends ConsumerWidget {
   const GameScreen({super.key});
 
@@ -119,18 +67,10 @@ class GameScreen extends ConsumerWidget {
     ref.listen(gameProvider.select((s) => s.isOver), (prev, next) {
       if (next && prev != true) _showResult(context, ref);
     });
-    // 手番が変わったら手札のおもて表示をリセットする。
-    ref.listen(gameProvider.select((s) => s.currentPlayer), (_, __) {
-      ref.read(revealedHandProvider.notifier).state = <int>{};
-    });
 
-    final portrait = effectiveLayout(context, ref) == AppLayout.portrait;
-    return Scaffold(
+    return const Scaffold(
       backgroundColor: ink,
-      body: SafeArea(
-        child:
-            portrait ? const PortraitDashboard() : const LandscapeDashboard(),
-      ),
+      body: SafeArea(child: Dashboard()),
     );
   }
 
@@ -208,46 +148,15 @@ class GameScreen extends ConsumerWidget {
   }
 }
 
-/// 横（ランドスケープ）レイアウト。横長構成を固定基準サイズで作り、
-/// 画面に合わせて等比縮小するので、どの画面でもモック通りの配置を保つ。
-class LandscapeDashboard extends StatelessWidget {
-  const LandscapeDashboard({super.key});
-  @override
-  Widget build(BuildContext context) => Center(
-        child: FittedBox(
-          fit: BoxFit.contain,
-          child: SizedBox(
-            width: 1280,
-            height: 840,
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: const [
-                  Header(),
-                  SizedBox(height: 8),
-                  Expanded(flex: 55, child: MiddleRow()),
-                  SizedBox(height: 8),
-                  Expanded(flex: 33, child: StrategySection()),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-}
-
-/// 縦（ポートレート）レイアウト。上部プレイヤーバー＋
-/// 左ステータス｜山札 の中央領域、下部に戦略カード（横スクロール）と自分の手札。
-class PortraitDashboard extends ConsumerWidget {
-  const PortraitDashboard({super.key});
+class Dashboard extends ConsumerWidget {
+  const Dashboard({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return const Column(
       children: [
         PlayerBar(),
-        // 盤面（山札）を主役として最大化。戦略カード・手札・ターゲット・メモは
-        // 下部バーからモーダルで開く。
+        // 盤面（山札）を主役として最大化。戦略カード・手札は下部バーからモーダルで開く。
+        // ターゲット確認・推理メモは、盤面上のボタンからいつでも開ける。
         Expanded(
           child: SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(8, 8, 8, 8),
@@ -267,14 +176,14 @@ class PortraitDashboard extends ConsumerWidget {
   }
 }
 
-/// 下部固定バー。戦略カード・手札・ターゲット・メモをモーダルで開く。
-/// 手札は枚数を常時表示（6枚で終了する重要情報のため）。
+/// 下部固定バー。戦略カード一覧・自分の手札をモーダルで開く。
+/// ターゲット・メモは盤面上に既にボタンがあるためここには置かない。
 class BottomActionBar extends ConsumerWidget {
   const BottomActionBar({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hand = ref.watch(
-      gameProvider.select((s) => s.players[s.currentPlayer].hand.length),
+      gameProvider.select((s) => s.players[0].hand.length),
     );
     Widget item(IconData icon, String label, VoidCallback onTap) => Expanded(
           child: InkWell(
@@ -304,9 +213,7 @@ class BottomActionBar extends ConsumerWidget {
           children: [
             item(Icons.style, '戦略カード', () => showStrategySheet(context, ref)),
             item(Icons.back_hand, '手札 $hand/$kHandLimit',
-                () => showHandSheet(context, ref)),
-            item(Icons.diamond, 'ターゲット', () => showTargetSheet(context, ref)),
-            item(Icons.edit_note, 'メモ', () => showMemoSheet(context, ref)),
+                () => showHandSheet(context, ref, 0)),
           ],
         ),
       ),
@@ -314,7 +221,7 @@ class BottomActionBar extends ConsumerWidget {
   }
 }
 
-/// 上部の全プレイヤー表示（手番強調・手札/ワーカー枚数）。
+/// 上部の全プレイヤー表示（自分バッジ・手番強調・ターゲット色・手札/ワーカー枚数）。
 class PlayerBar extends ConsumerWidget {
   const PlayerBar({super.key});
   @override
@@ -335,60 +242,70 @@ class PlayerBar extends ConsumerWidget {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: PlayerTile(player: players[i], active: current == i),
+                child: PlayerTile(
+                  player: players[i],
+                  active: current == i,
+                  self: isSelf(i),
+                  onTap: () => showHandSheet(context, ref, i),
+                ),
               ),
             ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: '表示切替',
-            onPressed: () => toggleLayout(context, ref),
-            icon: const Icon(Icons.stay_current_landscape, color: gold),
-          ),
         ],
       ),
     );
   }
 }
 
-/// プレイヤーバー内の1人分（顔・名前・手札・ワーカー・手番バッジ）。
+/// プレイヤーバー内の1人分。タップで手札モーダルを開く
+/// （自分はおもて、他プレイヤーは裏で表示）。
 class PlayerTile extends StatelessWidget {
-  const PlayerTile({required this.player, required this.active, super.key});
+  const PlayerTile({
+    required this.player,
+    required this.active,
+    required this.self,
+    required this.onTap,
+    super.key,
+  });
   final PlayerState player;
   final bool active;
+  final bool self;
+  final VoidCallback onTap;
+
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-        decoration: BoxDecoration(
-          color: active ? const Color(0xff1c2530) : Colors.transparent,
-          border: Border.all(
-            color: active ? Colors.cyanAccent : Colors.white12,
-            width: active ? 2 : 1,
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+          decoration: BoxDecoration(
+            color: active ? const Color(0xff1c2530) : Colors.transparent,
+            border: Border.all(
+              color: active ? Colors.cyanAccent : Colors.white12,
+              width: active ? 2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: active
+                ? const [BoxShadow(color: Colors.cyanAccent, blurRadius: 8)]
+                : null,
           ),
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: active
-              ? const [BoxShadow(color: Colors.cyanAccent, blurRadius: 8)]
-              : null,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                playerAvatar(player, 18),
-                if (active)
-                  Positioned(
-                    top: -8,
-                    right: -8,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 「あなた」は通常のフロー内に置く（オーバーレイの重なり・欠けを避けるため）。
+              if (self)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 4, vertical: 1),
                       decoration: BoxDecoration(
-                        color: gold,
+                        color: teal,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: const Text(
-                        '手番',
+                        'あなた',
                         style: TextStyle(
                           color: Colors.black,
                           fontSize: 9,
@@ -397,36 +314,71 @@ class PlayerTile extends StatelessWidget {
                       ),
                     ),
                   ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              player.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-            ),
-            Text(
-              '手札 ${player.hand.length}',
-              style: const TextStyle(color: parchment, fontSize: 10),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.hardware, size: 11, color: gold),
-                const SizedBox(width: 2),
-                Text(
-                  '${player.workers}/${PlayerState.kWorkersPerPlayer}',
-                  style: const TextStyle(color: gold, fontSize: 10),
                 ),
-              ],
-            ),
-          ],
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  playerAvatar(player, 18),
+                  if (active)
+                    Positioned(
+                      top: -8,
+                      right: -8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: gold,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          '手番',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                player.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.diamond, size: 10, color: player.target.color),
+                  const SizedBox(width: 3),
+                  Text(
+                    '手札 ${player.hand.length}',
+                    style: const TextStyle(color: parchment, fontSize: 10),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.hardware, size: 11, color: gold),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${player.workers}/${PlayerState.kWorkersPerPlayer}',
+                    style: const TextStyle(color: gold, fontSize: 10),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       );
 }
 
-/// 盤面上の自分ステータス横帯（ラウンド・手番・ワーカー・独占・ターゲット）。
+/// 盤面上の自分ステータス横帯（ラウンド・手番・ワーカー・独占・ターゲット確認）。
 class StatusBar extends ConsumerWidget {
   const StatusBar({super.key});
   @override
@@ -544,417 +496,6 @@ class BoardPanel extends ConsumerWidget {
   }
 }
 
-/// 戦略カードの横スクロール一覧（使用可否を色で区別）。
-class StrategyStrip extends StatelessWidget {
-  const StrategyStrip({super.key});
-  @override
-  Widget build(BuildContext context) => GoldPanel(
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '戦略カード（タップして使用）',
-                    style: TextStyle(
-                        color: parchment, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Text('横スワイプで一覧 →',
-                    style: TextStyle(color: Color(0xff9fb0bf), fontSize: 11)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 176,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: StrategySection.actions.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (_, i) => SizedBox(
-                  width: 132,
-                  child: ActionCard(index: i, data: StrategySection.actions[i]),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-}
-
-/// 現在の手番プレイヤーの手札を本人だけが確認するモーダル。
-void showHandSheet(BuildContext context, WidgetRef ref) {
-  showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: panel,
-    builder: (_) => Consumer(
-      builder: (context, ref, __) {
-        final state = ref.watch(gameProvider);
-        final player = state.players[state.currentPlayer];
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '${player.name} の手札（本人のみ確認）  現在 ${player.score} 点',
-                style: const TextStyle(
-                  color: parchment,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (player.hand.isEmpty)
-                const Text('まだ宝石がありません。', style: TextStyle(color: parchment))
-              else
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    for (final card in player.hand) HandTile(card: card)
-                  ],
-                ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    ),
-  );
-}
-
-/// ターゲット（宝石）と得点ルールを表示するモーダル。
-void showTargetSheet(BuildContext context, WidgetRef ref) {
-  final target = ref.read(gameProvider).players[0].target;
-  showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: panel,
-    builder: (_) => Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text('あなたのターゲット',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 12),
-          Container(
-            height: 150,
-            width: 120,
-            decoration: BoxDecoration(
-              color: const Color(0xff101b23),
-              border: Border.all(color: gold, width: 4),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: target == Gem.blue
-                ? Image.asset('assets/img/gem_blue.png', fit: BoxFit.cover)
-                : Center(
-                    child: Icon(Icons.diamond, size: 76, color: target.color)),
-          ),
-          const SizedBox(height: 12),
-          Text('${target.label} +3点 / 白 +1点 / 黒 -2点'),
-          const Text('黒以外の5色を集めると +10点', style: TextStyle(color: parchment)),
-          const Text('同じ色を5枚集めると +20点', style: TextStyle(color: parchment)),
-        ],
-      ),
-    ),
-  );
-}
-
-/// 推理メモの表示・編集モーダル。
-void showMemoSheet(BuildContext context, WidgetRef ref) {
-  final controller = TextEditingController(text: ref.read(memoProvider));
-  showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: panel,
-    isScrollControlled: true,
-    builder: (ctx) => Padding(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text('推理メモ（あなただけ）',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(
-            controller: controller,
-            maxLines: 6,
-            decoration: const InputDecoration(border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: () {
-              ref.read(memoProvider.notifier).state = controller.text;
-              Navigator.pop(ctx);
-            },
-            child: const Text('保存して閉じる'),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-/// 戦略カード一覧をモーダルで開く（横スクロールの一覧を再利用）。
-void showStrategySheet(BuildContext context, WidgetRef ref) {
-  showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: panel,
-    builder: (_) => const Padding(
-      padding: EdgeInsets.all(12),
-      child: StrategyStrip(),
-    ),
-  );
-}
-
-class HandTile extends StatelessWidget {
-  const HandTile({required this.card, super.key});
-  final HandCard card;
-  @override
-  Widget build(BuildContext context) => Container(
-        width: 58,
-        height: 80,
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: parchment,
-          borderRadius: BorderRadius.circular(7),
-          border: Border.all(color: const Color(0xff695b42), width: 2),
-        ),
-        child: Column(
-          children: [
-            Align(
-              alignment: Alignment.topRight,
-              child: card.doubled
-                  ? const Text(
-                      '×2',
-                      style: TextStyle(
-                        color: Colors.red,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                      ),
-                    )
-                  : const SizedBox(height: 13),
-            ),
-            Expanded(
-              child: Center(
-                child: Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: card.gem.color,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.black),
-                  ),
-                ),
-              ),
-            ),
-            Text(
-              card.gem.label,
-              style: const TextStyle(
-                color: Colors.black,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      );
-}
-
-class Header extends ConsumerWidget {
-  const Header({super.key});
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final players = ref.watch(gameProvider.select((s) => s.players));
-    final current = ref.watch(gameProvider.select((s) => s.currentPlayer));
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xff050a0d),
-        border: Border.all(color: gold),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(
-            width: 168,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'FakeDigger',
-                  style: TextStyle(
-                    color: Color(0xffffd277),
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  'フェイクディガー',
-                  style: TextStyle(color: parchment, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Row(
-              children: [
-                for (var i = 1; i < players.length; i++)
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                      child:
-                          PlayerChip(player: players[i], active: current == i),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          ...headerActions(context, ref),
-        ],
-      ),
-    );
-  }
-}
-
-class PlayerChip extends StatelessWidget {
-  const PlayerChip({required this.player, this.active = false, super.key});
-  final PlayerState player;
-  final bool active;
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: panel,
-          border: Border.all(
-            color: active ? Colors.cyanAccent : gold,
-            width: active ? 2.5 : 1,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                playerAvatar(player, 16),
-                if (player.role != null)
-                  Positioned(
-                    left: -4,
-                    bottom: -4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: ink,
-                        border: Border.all(color: gold),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        player.role!,
-                        style: const TextStyle(
-                          color: gold,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    player.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    '手札 ${player.hand.length}枚',
-                    style: const TextStyle(color: parchment, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              decoration: BoxDecoration(
-                color: ink,
-                border: Border.all(color: gold),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                'VP ${player.score}',
-                style: const TextStyle(
-                  color: gold,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-}
-
-/// ヘッダー下の中央帯：左パネル・山札・右パネル。
-class MiddleRow extends StatelessWidget {
-  const MiddleRow({super.key});
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-        builder: (context, box) {
-          final narrow = box.maxWidth < 720;
-          final sideWidth = narrow ? 140.0 : 172.0;
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                  width: sideWidth,
-                  child: const SidePanel(child: RoundPanel())),
-              const SizedBox(width: 8),
-              const Expanded(child: MineBoard()),
-              const SizedBox(width: 8),
-              SizedBox(
-                  width: sideWidth + 12,
-                  child: const SidePanel(child: TargetPanel())),
-            ],
-          );
-        },
-      );
-}
-
-/// 中身が縦に収まらない場合は縮小し、常にスクロールなしで収める枠。
-class SidePanel extends StatelessWidget {
-  const SidePanel({required this.child, super.key});
-  final Widget child;
-  @override
-  Widget build(BuildContext context) => GoldPanel(
-        padding: const EdgeInsets.all(10),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.topCenter,
-          child: SizedBox(
-            width: 150,
-            child: child,
-          ),
-        ),
-      );
-}
-
 class GoldPanel extends StatelessWidget {
   const GoldPanel({
     required this.child,
@@ -974,128 +515,6 @@ class GoldPanel extends StatelessWidget {
         ),
         child: child,
       );
-}
-
-class RoundPanel extends ConsumerWidget {
-  const RoundPanel({super.key});
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(gameProvider);
-    final current = state.players[state.currentPlayer];
-    final start = state.players[state.startPlayer];
-    final yourTurn = state.currentPlayer == 0;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          'ラウンド  ${state.round} / ∞',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const Divider(color: gold),
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          decoration: BoxDecoration(
-            color: yourTurn ? const Color(0xff123a33) : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            yourTurn ? 'あなたの番です' : '${current.name} の番',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: yourTurn ? teal : parchment,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        const Text('スタートプレイヤー'),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            playerAvatar(start, 20),
-            const SizedBox(width: 8),
-            Text(start.name),
-          ],
-        ),
-        const Divider(height: 26),
-        Text('ワーカー（${current.name}）'),
-        const SizedBox(height: 6),
-        current.workers > 0
-            ? Row(
-                children: [
-                  for (var i = 0; i < current.workers; i++)
-                    const Padding(
-                      padding: EdgeInsets.only(right: 6),
-                      child: Icon(Icons.hardware, size: 26, color: gold),
-                    ),
-                ],
-              )
-            : const Text('（なし）', style: TextStyle(color: parchment)),
-        const Divider(height: 26),
-        const Text('独占チップ'),
-        const SizedBox(height: 4),
-        const Align(
-          alignment: Alignment.centerLeft,
-          child: Icon(Icons.workspace_premium, size: 26, color: Colors.amber),
-        ),
-        const SizedBox(height: 14),
-        OutlinedButton(onPressed: () {}, child: const Text('?  DAI早見表')),
-      ],
-    );
-  }
-}
-
-class MineBoard extends ConsumerWidget {
-  const MineBoard({super.key});
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(gameProvider);
-    final canDig =
-        !state.isOver && state.players[state.currentPlayer].workers > 0;
-    Widget cell(int i) => Padding(
-          padding: const EdgeInsets.all(6),
-          child: DeckCard(
-            index: i,
-            deck: state.decks[i],
-            canDig: canDig,
-            crownColor: state.decks[i].monopolizedBy == null
-                ? null
-                : state.players[state.decks[i].monopolizedBy!].color,
-          ),
-        );
-    return GoldPanel(
-      child: Column(
-        children: [
-          const Text(
-            '—  山札エリア（DAIが見える） —',
-            style: TextStyle(color: parchment, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 6),
-          Expanded(
-            child: Column(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      for (var i = 0; i < 4; i++) Expanded(child: cell(i))
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Row(
-                    children: [
-                      for (var i = 4; i < 8; i++) Expanded(child: cell(i))
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class DeckCard extends ConsumerWidget {
@@ -1214,77 +633,254 @@ class DeckCard extends ConsumerWidget {
   }
 }
 
-class TargetPanel extends ConsumerWidget {
-  const TargetPanel({super.key});
+/// 戦略カードを縦2列のグリッドで、スワイプなしに全部並べる。
+class StrategyGrid extends StatelessWidget {
+  const StrategyGrid({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final target = ref.watch(gameProvider.select((s) => s.players[0].target));
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text(
-          'あなたのターゲット',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 10),
-        Container(
-          height: 120,
-          width: 100,
-          decoration: BoxDecoration(
-            color: const Color(0xff101b23),
-            border: Border.all(color: gold, width: 4),
-            borderRadius: BorderRadius.circular(8),
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            '戦略カード（タップして使用）',
+            style: TextStyle(
+              color: parchment,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
           ),
-          clipBehavior: Clip.antiAlias,
-          child: target == Gem.blue
-              ? Image.asset('assets/img/gem_blue.png', fit: BoxFit.cover)
-              : Center(
-                  child: Icon(Icons.diamond, size: 60, color: target.color)),
-        ),
-        const SizedBox(height: 8),
-        Text('${target.label} +3点 / 白 +1点 / 黒 -2点',
-            textAlign: TextAlign.center),
-        const Text('5色集めると +10点', style: TextStyle(color: parchment)),
-        const Divider(height: 22, color: gold),
-        const Text(
-          '推理メモ（あなただけ）',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 6),
-        Text(ref.watch(memoProvider), style: const TextStyle(height: 1.6)),
-        const SizedBox(height: 6),
-        OutlinedButton(
-          onPressed: () => _editMemo(context, ref),
-          child: const Text('メモを編集'),
-        ),
-      ],
-    );
-  }
+          const SizedBox(height: 10),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 0.92,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: kStrategyActions.length,
+            itemBuilder: (_, i) =>
+                ActionCard(index: i, data: kStrategyActions[i]),
+          ),
+        ],
+      );
+}
 
-  void _editMemo(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController(text: ref.read(memoProvider));
-    showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('推理メモ'),
-        content:
-            TextField(controller: controller, maxLines: 6, autofocus: true),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('キャンセル'),
+/// [playerIndex] の手札を確認するモーダル。
+/// 自分（index 0）はおもてで、他プレイヤーは裏向きで表示する（非公開情報）。
+void showHandSheet(BuildContext context, WidgetRef ref, int playerIndex) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: panel,
+    builder: (_) => Consumer(
+      builder: (context, ref, __) {
+        final state = ref.watch(gameProvider);
+        final player = state.players[playerIndex];
+        final self = isSelf(playerIndex);
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                self
+                    ? '${player.name} の手札（自分）  現在 ${player.score} 点'
+                    : '${player.name} の手札（非公開）',
+                style: const TextStyle(
+                  color: parchment,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (player.hand.isEmpty)
+                const Text('まだ宝石がありません。', style: TextStyle(color: parchment))
+              else
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final card in player.hand)
+                      self ? HandTile(card: card) : const HandBackTile(),
+                  ],
+                ),
+              const SizedBox(height: 8),
+            ],
           ),
+        );
+      },
+    ),
+  );
+}
+
+/// ターゲット（宝石）と得点ルールを表示するモーダル。
+void showTargetSheet(BuildContext context, WidgetRef ref) {
+  final target = ref.read(gameProvider).players[0].target;
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: panel,
+    builder: (_) => Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('あなたのターゲット',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 12),
+          Container(
+            height: 150,
+            width: 120,
+            decoration: BoxDecoration(
+              color: const Color(0xff101b23),
+              border: Border.all(color: gold, width: 4),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: target == Gem.blue
+                ? Image.asset('assets/img/gem_blue.png', fit: BoxFit.cover)
+                : Center(
+                    child: Icon(Icons.diamond, size: 76, color: target.color)),
+          ),
+          const SizedBox(height: 12),
+          Text('${target.label} +3点 / 白 +1点 / 黒 -2点'),
+          const Text('黒以外の5色を集めると +10点', style: TextStyle(color: parchment)),
+          const Text('同じ色を5枚集めると +20点', style: TextStyle(color: parchment)),
+        ],
+      ),
+    ),
+  );
+}
+
+/// 推理メモの表示・編集モーダル。
+void showMemoSheet(BuildContext context, WidgetRef ref) {
+  final controller = TextEditingController(text: ref.read(memoProvider));
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: panel,
+    isScrollControlled: true,
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('推理メモ（あなただけ）',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            maxLines: 6,
+            decoration: const InputDecoration(border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 12),
           FilledButton(
             onPressed: () {
               ref.read(memoProvider.notifier).state = controller.text;
-              Navigator.pop(context);
+              Navigator.pop(ctx);
             },
-            child: const Text('保存'),
+            child: const Text('保存して閉じる'),
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
+
+/// 戦略カード一覧をモーダルで開く（縦スクロールのドラッグシート、横スワイプなし）。
+void showStrategySheet(BuildContext context, WidgetRef ref) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: panel,
+    isScrollControlled: true,
+    builder: (_) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) => SingleChildScrollView(
+        controller: scrollController,
+        padding: const EdgeInsets.all(12),
+        child: const StrategyGrid(),
+      ),
+    ),
+  );
+}
+
+class HandTile extends StatelessWidget {
+  const HandTile({required this.card, super.key});
+  final HandCard card;
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 58,
+        height: 80,
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: parchment,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: const Color(0xff695b42), width: 2),
+        ),
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.topRight,
+              child: card.doubled
+                  ? const Text(
+                      '×2',
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    )
+                  : const SizedBox(height: 13),
+            ),
+            Expanded(
+              child: Center(
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: card.gem.color,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.black),
+                  ),
+                ),
+              ),
+            ),
+            Text(
+              card.gem.label,
+              style: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+/// 他プレイヤーの手札1枚を裏向きで表す（中身は見せない）。
+class HandBackTile extends StatelessWidget {
+  const HandBackTile({super.key});
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 58,
+        height: 80,
+        decoration: BoxDecoration(
+          color: const Color(0xff10151d),
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: gold, width: 2),
+        ),
+        child: const Center(
+          child: Icon(Icons.diamond, color: gold, size: 26),
+        ),
+      );
 }
 
 class ActionData {
@@ -1295,67 +891,28 @@ class ActionData {
   final int cost;
 }
 
-class StrategySection extends StatelessWidget {
-  const StrategySection({super.key});
-  static const actions = [
-    ActionData(
-        '発掘', Icons.hardware, 1, '山札の1番上のカードを手札に加える', 'assets/img/act_dig.png'),
-    ActionData('鑑定', Icons.search, 1, '他プレイヤーの宝石カード1枚を見る',
-        'assets/img/act_appraise.png'),
-    ActionData('調査', Icons.visibility, 1, '任意の山札のすべてのカードを見る',
-        'assets/img/act_investigate.png'),
-    ActionData('整地', Icons.grass, 1, '任意の山札2つを1〜5枚ずつに作り変える',
-        'assets/img/act_level.png'),
-    ActionData(
-        '埋葬', Icons.south, 1, '手札のカード1枚を山札の1番上に置く', 'assets/img/act_bury.png'),
-    ActionData('強奪', Icons.pan_tool, 2, '他プレイヤーの宝石を自分の手札にする',
-        'assets/img/act_rob.png'),
-    ActionData('独占', Icons.workspace_premium, 1, '任意の山札を効果の対象外にする',
-        'assets/img/act_monopoly.png'),
-    ActionData('捏造', Icons.swap_horiz, 2, '手札と山札のカードを交換する',
-        'assets/img/act_fabricate.png'),
-    ActionData('保護', Icons.shield, 1, '手札を任意の枚数、効果対象外にする',
-        'assets/img/act_protect.png'),
-    ActionData('取引', Icons.handshake, 2, '他プレイヤーとカードを1枚ずつ交換',
-        'assets/img/act_trade.png'),
-  ];
-  @override
-  Widget build(BuildContext context) => GoldPanel(
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          children: [
-            const Text(
-              '—  戦略カード（ワーカーを置いて効果を使用 / 現在は発掘のみ実装） —',
-              style: TextStyle(color: parchment, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Expanded(
-              child: Column(
-                children: [
-                  for (var row = 0; row < 2; row++)
-                    Expanded(
-                      child: Row(
-                        children: [
-                          for (var col = 0; col < 5; col++)
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.all(5),
-                                child: ActionCard(
-                                  index: row * 5 + col,
-                                  data: actions[row * 5 + col],
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-}
+const kStrategyActions = [
+  ActionData(
+      '発掘', Icons.hardware, 1, '山札の1番上のカードを手札に加える', 'assets/img/act_dig.png'),
+  ActionData('鑑定', Icons.search, 1, '他プレイヤーの宝石カード1枚を見る',
+      'assets/img/act_appraise.png'),
+  ActionData('調査', Icons.visibility, 1, '任意の山札のすべてのカードを見る',
+      'assets/img/act_investigate.png'),
+  ActionData(
+      '整地', Icons.grass, 1, '任意の山札2つを1〜5枚ずつに作り変える', 'assets/img/act_level.png'),
+  ActionData(
+      '埋葬', Icons.south, 1, '手札のカード1枚を山札の1番上に置く', 'assets/img/act_bury.png'),
+  ActionData(
+      '強奪', Icons.pan_tool, 2, '他プレイヤーの宝石を自分の手札にする', 'assets/img/act_rob.png'),
+  ActionData('独占', Icons.workspace_premium, 1, '任意の山札を効果の対象外にする',
+      'assets/img/act_monopoly.png'),
+  ActionData('捏造', Icons.swap_horiz, 2, '手札と山札のカードを交換する',
+      'assets/img/act_fabricate.png'),
+  ActionData(
+      '保護', Icons.shield, 1, '手札を任意の枚数、効果対象外にする', 'assets/img/act_protect.png'),
+  ActionData('取引', Icons.handshake, 2, '他プレイヤーとカードを1枚ずつ交換',
+      'assets/img/act_trade.png'),
+];
 
 class ActionCard extends ConsumerWidget {
   const ActionCard({required this.index, required this.data, super.key});
