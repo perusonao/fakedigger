@@ -4,55 +4,47 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 自分の手番開始時に自動で開く戦略モーダルを待つ
-/// （250msの遅延＋登場アニメーションの完了）。
-Future<void> waitForAutoStrategySheet(WidgetTester tester) async {
-  await tester.pump(const Duration(milliseconds: 260));
-  await tester.pumpAndSettle();
-}
-
-/// 自分／CPUのターン進行タイマー（最大で自分の待ち+CPU3人分の待ち＋演出）を
+/// CPUの手番進行タイマー（最大で自分の待ち+CPU3人分の待ち＋演出）を
 /// 使い切り、保留中のタイマーが残らない状態までテストを進める
 /// （`flutter_test` はテスト終了時に保留タイマーが残っているとエラーにするため）。
 Future<void> drainTurnTimers(WidgetTester tester) =>
     tester.pump(const Duration(seconds: 4));
 
+Widget wrapGameScreen() => ProviderScope(
+      child: MaterialApp(
+        scaffoldMessengerKey: scaffoldMessengerKey,
+        home: const GameScreen(),
+      ),
+    );
+
 void main() {
-  testWidgets('renders the game board and selects a deck', (tester) async {
+  testWidgets('山札を選択して発掘できる（発掘→山札選択→確認→結果告知）', (tester) async {
     tester.view.physicalSize = const Size(412, 915);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final handle = tester.ensureSemantics();
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          scaffoldMessengerKey: scaffoldMessengerKey,
-          home: const GameScreen(),
-        ),
-      ),
-    );
+    await tester.pumpWidget(wrapGameScreen());
+    await tester.pump();
     expect(find.textContaining('ラウンド'), findsOneWidget);
 
-    // ①②自分の手番になり、戦略モーダルが自動で開く。③『発掘』をタップ。
-    await waitForAutoStrategySheet(tester);
-    expect(find.text('戦略カード（タップして使用）'), findsOneWidget);
+    // 「発掘」戦略カードをタップして選択する。
     await tester.tap(find.text('発掘').first);
-    await tester.pumpAndSettle();
+    await tester.pump();
 
-    // ④モーダルが閉じる。⑤⑥山札1をタップ。
+    // 山札1をタップする。
     await tester.tap(find.bySemanticsLabel(RegExp('^山札1、')));
     await tester.pumpAndSettle();
 
-    // ⑦確認ダイアログで「発掘する」を選ぶ。
+    // 確認ダイアログで「発掘する」を選ぶ。
     expect(find.text('発掘する'), findsOneWidget);
     await tester.tap(find.text('発掘する'));
     // CPUの手番（kCpuThinkDelay以降）が進む前に、自分の発掘結果だけを確認する。
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
 
-    // ⑧⑨発掘した宝石が告知され、選択した山札は発光したままになる。
+    // 発掘した宝石が告知され、選択した山札は発光したままになる。
     expect(find.textContaining('の宝石を発掘しました'), findsOneWidget);
     final container = tester.widget<AnimatedContainer>(
       find
@@ -69,28 +61,31 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('山札を長押しすると詳細ダイアログが表示される', (tester) async {
+    await tester.pumpWidget(wrapGameScreen());
+    await tester.pump();
+
+    await tester.longPress(find.bySemanticsLabel(RegExp('^山札1、')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('山札1の詳細'), findsOneWidget);
+    expect(find.text('この山札を選択'), findsOneWidget);
+
+    await tester.tap(find.text('閉じる'));
+    await tester.pumpAndSettle();
+    await drainTurnTimers(tester);
+  });
+
   testWidgets('自分（先頭プレイヤー）に「あなた」バッジが表示される', (tester) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          scaffoldMessengerKey: scaffoldMessengerKey,
-          home: const GameScreen(),
-        ),
-      ),
-    );
-    expect(find.text('あなた'), findsOneWidget);
+    await tester.pumpWidget(wrapGameScreen());
+    await tester.pump();
+    expect(find.textContaining('あなた'), findsWidgets);
     await drainTurnTimers(tester);
   });
 
   testWidgets('各プレイヤーにターゲット宝石アイコンが表示される', (tester) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          scaffoldMessengerKey: scaffoldMessengerKey,
-          home: const GameScreen(),
-        ),
-      ),
-    );
+    await tester.pumpWidget(wrapGameScreen());
+    await tester.pump();
     final diamonds = find.descendant(
       of: find.byType(PlayerTile),
       matching: find.byIcon(Icons.diamond),
@@ -99,55 +94,32 @@ void main() {
     await drainTurnTimers(tester);
   });
 
-  testWidgets('戦略ボタンは画面中央に浮き、下部エリアには手札のみ表示される', (tester) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          scaffoldMessengerKey: scaffoldMessengerKey,
-          home: const GameScreen(),
-        ),
-      ),
-    );
-    expect(find.byType(StrategyFab), findsOneWidget);
-    final bar = find.byType(HandDisplayBar);
-    expect(bar, findsOneWidget);
-    expect(
-      find.descendant(of: bar, matching: find.byIcon(Icons.style)),
-      findsNothing,
-    );
-    expect(
-      find.descendant(of: bar, matching: find.byIcon(Icons.edit_note)),
-      findsNothing,
-    );
+  testWidgets('プレイヤー表示エリアは戦略カードエリアの下に表示される', (tester) async {
+    await tester.pumpWidget(wrapGameScreen());
+    await tester.pump();
+    final strategyCenter = tester.getCenter(find.byType(StrategyArea));
+    final playerAreaCenter = tester.getCenter(find.byType(PlayerArea));
+    expect(playerAreaCenter.dy, greaterThan(strategyCenter.dy));
     await drainTurnTimers(tester);
   });
 
-  testWidgets('プレイヤー一覧は山札の下に表示される', (tester) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          scaffoldMessengerKey: scaffoldMessengerKey,
-          home: const GameScreen(),
-        ),
-      ),
-    );
-    final boardCenter = tester.getCenter(find.byType(BoardPanel));
-    final playerBarCenter = tester.getCenter(find.byType(PlayerBar));
-    expect(playerBarCenter.dy, greaterThan(boardCenter.dy));
+  testWidgets('自分の手札エリアはプレイヤー表示エリアの下に表示される', (tester) async {
+    await tester.pumpWidget(wrapGameScreen());
+    await tester.pump();
+    final playerAreaCenter = tester.getCenter(find.byType(PlayerArea));
+    final handAreaCenter = tester.getCenter(find.byType(HandArea));
+    expect(handAreaCenter.dy, greaterThan(playerAreaCenter.dy));
     await drainTurnTimers(tester);
   });
 
-  testWidgets('プレイヤーをタップすると下部の手札表示が切り替わる。自分はおもて、他は裏', (tester) async {
-    tester.view.physicalSize = const Size(450, 1800);
+  testWidgets('自分の手札をタップすると詳細ダイアログが表示される', (tester) async {
+    tester.view.physicalSize = const Size(412, 1400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final container = ProviderContainer();
     addTearDown(container.dispose);
-    // このテストは下部の手札表示エリアの表裏切り替えだけを検証するため、
-    // GameScreenの自動ターン進行（戦略モーダル自動オープン等）に依存しない
-    // Dashboardを直接使う。
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
@@ -156,76 +128,98 @@ void main() {
         ),
       ),
     );
-
-    // 山札1を2回発掘して、自分(0)と次のプレイヤー(1)の手札に1枚ずつ持たせる。
-    container.read(gameProvider.notifier).dig(0);
     container.read(gameProvider.notifier).dig(0);
     await tester.pump();
 
-    final bar = find.byType(HandDisplayBar);
-    // 既定では自分（index 0）の手札がおもてで表示されている。
-    expect(
-      find.descendant(of: bar, matching: find.byType(HandTile)),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: bar, matching: find.byType(HandBackTile)),
-      findsNothing,
-    );
-
-    final tiles = find.byType(PlayerTile);
-    expect(tiles, findsNWidgets(4));
-
-    // 他プレイヤーのアイコンをタップ → 下部エリアが裏向き（HandBackTile）に切り替わる。
-    await tester.ensureVisible(tiles.at(1));
-    await tester.tap(tiles.at(1));
-    // 手番でないプレイヤーの「考え中」スピナーが無限アニメーションのため、
+    await tester.tap(find.byType(HandTile).first);
+    // 手番以外のプレイヤーの「考え中」スピナーが無限アニメーションのため、
     // pumpAndSettle() は使わず一定時間だけ進める。
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(
-      find.descendant(of: bar, matching: find.byType(HandBackTile)),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: bar, matching: find.byType(HandTile)),
-      findsNothing,
-    );
 
-    // 自分のアイコンをタップ → おもて（HandTile）に戻る。
-    await tester.ensureVisible(tiles.at(0));
-    await tester.tap(tiles.at(0));
+    expect(find.textContaining('基本得点'), findsOneWidget);
+    expect(find.text('選択'), findsOneWidget);
+    await tester.tap(find.text('選択'));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(
-      find.descendant(of: bar, matching: find.byType(HandTile)),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: bar, matching: find.byType(HandBackTile)),
-      findsNothing,
-    );
   });
 
-  testWidgets('戦略カード一覧を開くとスワイプなしで10枚すべて確認できる', (tester) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          scaffoldMessengerKey: scaffoldMessengerKey,
-          home: const GameScreen(),
-        ),
-      ),
-    );
-    // 自分の手番開始で自動的に開く。
-    await waitForAutoStrategySheet(tester);
-    expect(find.byType(ActionCard), findsNWidgets(10));
-    for (final title in const [
-      '発掘', '鑑定', '調査', '整地', '埋葬', '強奪', '独占', '捏造', '保護', '取引', //
-    ]) {
-      expect(find.text(title), findsOneWidget);
-    }
+  testWidgets('下部ナビゲーションからターゲット・推理メモ・ログを開ける', (tester) async {
+    await tester.pumpWidget(wrapGameScreen());
+    await tester.pump();
+
+    await tester.tap(find.text('ターゲット'));
+    await tester.pumpAndSettle();
+    expect(find.text('あなたのターゲット'), findsOneWidget);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('推理メモ'));
+    await tester.pumpAndSettle();
+    expect(find.text('推理メモ（あなただけ）'), findsOneWidget);
+    await tester.tap(find.text('保存して閉じる'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('ログ'));
+    await tester.pumpAndSettle();
+    expect(find.text('ログ'), findsWidgets);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    await drainTurnTimers(tester);
+  });
+
+  testWidgets('戦略カードは横スクロールで10枚すべて確認できる', (tester) async {
+    tester.view.physicalSize = const Size(412, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(wrapGameScreen());
+    await tester.pump();
+    // 横スクロールのListViewは遅延構築のため、最初は先頭側だけが見える。
+    expect(find.text('発掘'), findsOneWidget);
+    expect(find.text('取引'), findsNothing);
+
+    await tester.drag(find.byType(StrategyArea), const Offset(-2000, 0));
+    await tester.pumpAndSettle();
+    // 端までスワイプすると末尾のカードが見える。
+    expect(find.text('取引'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    // バリアをタップして閉じ、後片付け。
-    await tester.tapAt(const Offset(10, 10));
+    await drainTurnTimers(tester);
+  });
+
+  for (final width in [320.0, 375.0, 390.0, 430.0]) {
+    testWidgets('幅${width.toInt()}pxでもレイアウト崩れ（オーバーフロー）が起きない', (tester) async {
+      tester.view.physicalSize = Size(width, 860);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(wrapGameScreen());
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      await drainTurnTimers(tester);
+    });
+  }
+
+  testWidgets('タブレット幅では中央寄せの最大幅で表示される', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(wrapGameScreen());
+    await tester.pump();
+
+    final box = tester.widget<ConstrainedBox>(
+      find.byWidgetPredicate(
+        (w) => w is ConstrainedBox && w.constraints.maxWidth == 900,
+      ),
+    );
+    expect(box.constraints.maxWidth, 900);
+
     await drainTurnTimers(tester);
   });
 }
