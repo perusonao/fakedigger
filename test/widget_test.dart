@@ -1,4 +1,5 @@
 import 'package:fakedigger/game/game_controller.dart';
+import 'package:fakedigger/game/models.dart';
 import 'package:fakedigger/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -141,6 +142,61 @@ void main() {
     expect(find.text('選択'), findsOneWidget);
     await tester.tap(find.text('選択'));
     await tester.pump(const Duration(milliseconds: 300));
+  });
+
+  testWidgets('他プレイヤーをタップすると手札表示が切り替わり、未鑑定は裏面のみ表示される', (tester) async {
+    tester.view.physicalSize = const Size(412, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: SafeArea(child: Dashboard())),
+        ),
+      ),
+    );
+
+    // 山札1を2回発掘して、自分(0)と次のプレイヤー(1)の手札に1枚ずつ持たせる。
+    container.read(gameProvider.notifier).dig(0);
+    container.read(gameProvider.notifier).dig(0);
+    await tester.pump();
+
+    // 既定では自分の手札がおもてで表示されている。
+    expect(find.byType(HandTile), findsOneWidget);
+    expect(find.byType(HandBackTile), findsNothing);
+
+    // 他プレイヤー（index 1）のアイコンをタップ → 手札表示エリアが切り替わる。
+    final tiles = find.byType(PlayerTile);
+    await tester.tap(tiles.at(1));
+    // 手番でないプレイヤーの「考え中」スピナーが無限アニメーションのため、
+    // pumpAndSettle() は使わず一定時間だけ進める。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 未鑑定なので裏面のみで、中身（HandTile）は見えない。
+    expect(find.byType(HandBackTile), findsOneWidget);
+    expect(find.byType(HandTile), findsNothing);
+
+    // このカードを「鑑定済み」にする（鑑定戦略の実装前提の状態のみ再現）。
+    final state = container.read(gameProvider);
+    final revealed = HandCard(
+      state.players[1].hand.first.gem,
+      revealedToSelf: true,
+    );
+    final players = [...state.players];
+    players[1] = players[1].copyWith(hand: [revealed]);
+    container.read(gameProvider.notifier).state =
+        state.copyWith(players: players);
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 鑑定済みなのでおもてで見える。
+    expect(find.byType(HandTile), findsOneWidget);
+    expect(find.byType(HandBackTile), findsNothing);
   });
 
   testWidgets('下部ナビゲーションからターゲット・推理メモ・ログを開ける', (tester) async {
