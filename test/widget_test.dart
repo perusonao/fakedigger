@@ -1,8 +1,8 @@
 import 'package:fakedigger/game/game_controller.dart';
 import 'package:fakedigger/game/models.dart';
 import 'package:fakedigger/main.dart';
+import 'package:fakedigger/theme.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -29,7 +29,7 @@ void main() {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(wrapGameScreen());
     await tester.pump();
-    expect(find.textContaining('ラウンド'), findsOneWidget);
+    expect(find.textContaining('R1'), findsOneWidget);
 
     // 「発掘」戦略カードをタップして選択する。
     await tester.tap(find.text('発掘').first);
@@ -88,13 +88,18 @@ void main() {
   testWidgets('プレイヤー表示エリアはコンパクトで、ターゲット色は表示しない', (tester) async {
     await tester.pumpWidget(wrapGameScreen());
     await tester.pump();
-    // ターゲットは常時表示せず、下部ナビゲーションのBottomSheetでのみ見せる
-    // （プレイヤー表示エリアの圧縮に伴い、ターゲット色のヒントアイコンは廃止）。
+    // ターゲットは常時表示せず、下部ナビゲーションのBottomSheetでのみ見せる。
+    // 手札枚数の表示に宝石アイコンを使うが、色はターゲットではなく
+    // 中立の金色で統一し、ターゲット色を漏らさない。
     final diamonds = find.descendant(
       of: find.byType(PlayerTile),
       matching: find.byIcon(Icons.diamond),
     );
-    expect(diamonds, findsNothing);
+    expect(diamonds, findsNWidgets(4));
+    for (final element in diamonds.evaluate()) {
+      final icon = element.widget as Icon;
+      expect(icon.color, kGold);
+    }
     expect(find.byType(PlayerTile), findsNWidgets(4));
     await drainTurnTimers(tester);
   });
@@ -309,7 +314,7 @@ void main() {
     await drainTurnTimers(tester);
   });
 
-  testWidgets('基準画面サイズ390×844で「あなたの番」表示が省略されない', (tester) async {
+  testWidgets('基準画面サイズ390×844で上部バーの手番表示（Tooltip）が省略されない', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -318,20 +323,18 @@ void main() {
     await tester.pumpWidget(wrapGameScreen());
     await tester.pump();
 
-    final textWidget = tester.widget<Text>(find.text('あなたの番'));
-    final renderParagraph = tester.renderObject<RenderParagraph>(
-      find.text('あなたの番'),
+    // 上部バーは文字列でなく色付きドット＋Tooltipで手番を示すため、
+    // 省略（ellipsis）が起こり得ない。手番用Tooltipのメッセージが正しく
+    // 「あなたの番」を保持していることと、オーバーフローが無いことを確認する。
+    expect(
+      find.descendant(
+        of: find.byType(StatusBar),
+        matching:
+            find.byWidgetPredicate((w) => w is Tooltip && w.message == 'あなたの番'),
+      ),
+      findsOneWidget,
     );
-    // 実際にレイアウトで与えられた幅（省略される前の制約）に対して、
-    // 同じ文字列・スタイルで改めてレイアウトし、本当に収まるかを確認する。
-    final painter = TextPainter(
-      text: TextSpan(text: textWidget.data, style: textWidget.style),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-      ellipsis: '…',
-    )..layout(maxWidth: renderParagraph.constraints.maxWidth);
-    expect(painter.didExceedMaxLines, isFalse,
-        reason: '「あなたの番」が省略表示（...）になっている');
+    expect(tester.takeException(), isNull);
 
     await drainTurnTimers(tester);
   });
