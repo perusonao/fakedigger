@@ -16,6 +16,9 @@ final routerProvider = Provider<GoRouter>(
 
 final selectedActionProvider = StateProvider<int?>((ref) => null);
 final selectedDeckProvider = StateProvider<int?>((ref) => null);
+
+/// 下部の手札表示エリアに表示するプレイヤー（既定は自分＝index 0）。
+final selectedPlayerProvider = StateProvider<int>((ref) => 0);
 final memoProvider = StateProvider<String>(
   (ref) => '① 赤 ×　青 ?　黒 ○\n② 赤 ○　青 ?　白 ?\n③ 黄 ?　黒 ○\n④ 青 ?　白 ○',
 );
@@ -235,63 +238,157 @@ class Dashboard extends ConsumerWidget {
   const Dashboard({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return const Column(
+    return const Stack(
       children: [
-        // 盤面（山札）を主役として最大化。プレイヤー表示はその下に配置し、
-        // アイコンタップで各自の手札モーダルを開ける（自分はおもて、他は裏）。
-        // 戦略カードは下部バーからモーダルで開く。ターゲット確認・推理メモは
-        // 盤面上のボタンからいつでも開ける。
-        Expanded(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(8, 8, 8, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                StatusBar(),
-                SizedBox(height: 8),
-                BoardPanel(),
-                SizedBox(height: 8),
-                PlayerBar(),
-              ],
+        Column(
+          children: [
+            // 盤面（山札）を主役として最大化。プレイヤー表示はその下に配置し、
+            // アイコンタップで下部の手札表示エリアの対象を切り替える
+            // （自分はおもて、他は裏）。ターゲット確認・推理メモは盤面上の
+            // ボタンからいつでも開ける。
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(8, 8, 8, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    StatusBar(),
+                    SizedBox(height: 8),
+                    BoardPanel(),
+                    SizedBox(height: 8),
+                    PlayerBar(),
+                  ],
+                ),
+              ),
             ),
-          ),
+            HandDisplayBar(),
+          ],
         ),
-        BottomActionBar(),
+        // 戦略カードを開くボタンは、フッターではなく画面中央部に浮かせる。
+        Align(alignment: Alignment.center, child: StrategyFab()),
       ],
     );
   }
 }
 
-/// 下部固定バー。戦略カード一覧をモーダルで開く。
-/// 自分の手札はプレイヤーバーの自分アイコンをタップして確認できるため、
-/// ターゲット・メモと同様にここには置かない。
-class BottomActionBar extends ConsumerWidget {
-  const BottomActionBar({super.key});
+/// 画面中央部に浮かべる、戦略カード一覧をモーダルで開くための丸ボタン。
+class StrategyFab extends ConsumerWidget {
+  const StrategyFab({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xff050a0d),
-          border: Border(top: BorderSide(color: gold)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: InkWell(
-            onTap: () => showStrategySheet(context, ref),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.style, color: gold, size: 22),
-                  SizedBox(height: 2),
-                  Text('戦略カード',
-                      style: TextStyle(color: parchment, fontSize: 11)),
-                ],
-              ),
+  Widget build(BuildContext context, WidgetRef ref) => Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => showStrategySheet(context, ref),
+          customBorder: const CircleBorder(),
+          child: Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: panel,
+              border: Border.all(color: gold, width: 2),
+              boxShadow: const [
+                BoxShadow(color: Colors.black87, blurRadius: 10),
+              ],
+            ),
+            child: const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.style, color: gold, size: 22),
+                Text(
+                  '戦略',
+                  style: TextStyle(
+                    color: parchment,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       );
+}
+
+/// 画面下部固定エリア。プレイヤーバーで選択中のプレイヤーの手札を、
+/// 宝石カードとして常時表示する。自分（index 0）はおもて、
+/// 他プレイヤーは裏向き（非公開情報）で表示する。
+class HandDisplayBar extends ConsumerWidget {
+  const HandDisplayBar({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(gameProvider);
+    final selected = ref.watch(selectedPlayerProvider);
+    final player = state.players[selected];
+    final self = isSelf(selected);
+    return Container(
+      height: 128,
+      decoration: const BoxDecoration(
+        color: Color(0xff050a0d),
+        border: Border(top: BorderSide(color: gold)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+              child: Row(
+                children: [
+                  playerAvatar(player, 10),
+                  const SizedBox(width: 6),
+                  Text(
+                    self
+                        ? '${player.name} の手札（あなた）'
+                        : '${player.name} の手札（非公開）',
+                    style: const TextStyle(
+                      color: parchment,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                  if (self) ...[
+                    const Spacer(),
+                    Text(
+                      '現在 ${player.score} 点',
+                      style: const TextStyle(
+                        color: gold,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Expanded(
+              child: player.hand.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'まだ宝石がありません。',
+                        style: TextStyle(color: parchment, fontSize: 12),
+                      ),
+                    )
+                  : ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      children: [
+                        for (final card in player.hand)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: self
+                                ? HandTile(card: card)
+                                : const HandBackTile(),
+                          ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// 山札の下に表示する全プレイヤー一覧
@@ -302,6 +399,7 @@ class PlayerBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final players = ref.watch(gameProvider.select((s) => s.players));
     final current = ref.watch(gameProvider.select((s) => s.currentPlayer));
+    final selected = ref.watch(selectedPlayerProvider);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
@@ -319,7 +417,9 @@ class PlayerBar extends ConsumerWidget {
                   player: players[i],
                   active: current == i,
                   self: isSelf(i),
-                  onTap: () => showHandSheet(context, ref, i),
+                  selected: selected == i,
+                  onTap: () =>
+                      ref.read(selectedPlayerProvider.notifier).state = i,
                 ),
               ),
             ),
@@ -329,19 +429,21 @@ class PlayerBar extends ConsumerWidget {
   }
 }
 
-/// プレイヤーバー内の1人分。タップで手札モーダルを開く
+/// プレイヤーバー内の1人分。タップすると下部の手札表示エリアの対象になる
 /// （自分はおもて、他プレイヤーは裏で表示）。
 class PlayerTile extends StatelessWidget {
   const PlayerTile({
     required this.player,
     required this.active,
     required this.self,
+    required this.selected,
     required this.onTap,
     super.key,
   });
   final PlayerState player;
   final bool active;
   final bool self;
+  final bool selected;
   final VoidCallback onTap;
 
   @override
@@ -353,13 +455,17 @@ class PlayerTile extends StatelessWidget {
           decoration: BoxDecoration(
             color: active ? const Color(0xff1c2530) : Colors.transparent,
             border: Border.all(
-              color: active ? Colors.cyanAccent : Colors.white12,
-              width: active ? 2 : 1,
+              color: active
+                  ? Colors.cyanAccent
+                  : (selected ? teal : Colors.white12),
+              width: active || selected ? 2 : 1,
             ),
             borderRadius: BorderRadius.circular(8),
             boxShadow: active
                 ? const [BoxShadow(color: Colors.cyanAccent, blurRadius: 8)]
-                : null,
+                : (selected
+                    ? const [BoxShadow(color: teal, blurRadius: 6)]
+                    : null),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -550,7 +656,7 @@ class BoardPanel extends ConsumerWidget {
             children: [
               const Expanded(
                 child: Text(
-                  '山札エリア（DAIが見える）',
+                  '山札エリア（宝石は非公開・残り枚数のみ表示）',
                   style:
                       TextStyle(color: parchment, fontWeight: FontWeight.bold),
                 ),
@@ -581,7 +687,6 @@ class BoardPanel extends ConsumerWidget {
               index: i,
               deck: state.decks[i],
               canDig: canDig,
-              dotSize: 18,
               crownColor: state.decks[i].monopolizedBy == null
                   ? null
                   : state.players[state.decks[i].monopolizedBy!].color,
@@ -620,19 +725,22 @@ class DeckCard extends ConsumerWidget {
     required this.deck,
     required this.canDig,
     this.crownColor,
-    this.dotSize = 15,
+    this.iconSize = 28,
     super.key,
   });
   final int index;
   final Deck deck;
   final bool canDig;
   final Color? crownColor;
-  final double dotSize;
+  final double iconSize;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enabled = canDig && !deck.isEmpty;
     final selected = ref.watch(selectedDeckProvider) == index;
+    // 山札の厚みを表す背面カード。宝石は裏向きのまま、実際の残り枚数に
+    // 応じて最大2枚まで重ねて見せる。
+    final backLayers = deck.isEmpty ? 0 : (deck.count - 1).clamp(0, 2);
     return Semantics(
       button: true,
       enabled: enabled,
@@ -644,11 +752,28 @@ class DeckCard extends ConsumerWidget {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
+            for (var i = backLayers; i >= 1; i--)
+              Positioned(
+                left: i * 3.0,
+                top: i * 3.0,
+                right: -i * 3.0,
+                bottom: -i * 3.0,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xff0c1620),
+                    borderRadius: BorderRadius.circular(7),
+                    border:
+                        Border.all(color: const Color(0xff4a3f2c), width: 2),
+                  ),
+                ),
+              ),
             AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               decoration: BoxDecoration(
-                color: deck.isEmpty ? const Color(0xff9a8f77) : parchment,
+                color: deck.isEmpty
+                    ? const Color(0xff23272b)
+                    : const Color(0xff10151d),
                 borderRadius: BorderRadius.circular(7),
                 border: Border.all(
                   color: selected
@@ -674,41 +799,38 @@ class DeckCard extends ConsumerWidget {
                     ),
                   ),
                   const Divider(color: Color(0xff8a7754), height: 10),
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Wrap(
-                        spacing: 3,
-                        runSpacing: 3,
-                        alignment: WrapAlignment.center,
-                        children: [
-                          for (final gem in deck.cards)
-                            Container(
-                              width: dotSize,
-                              height: dotSize,
-                              decoration: BoxDecoration(
-                                color: gem.color,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.black),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      '残り ${deck.count}枚',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                  Expanded(
+                    child: Center(
+                      child: Icon(
+                        Icons.diamond,
+                        size: iconSize,
+                        color: deck.isEmpty ? Colors.white24 : gold,
                       ),
                     ),
                   ),
                 ],
+              ),
+            ),
+            // 残り枚数は、宝石カード（裏）に重ねて右下に表示する。
+            Positioned(
+              right: -4,
+              bottom: -4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: parchment,
+                  borderRadius: BorderRadius.circular(10),
+                  border:
+                      Border.all(color: const Color(0xff695b42), width: 1.5),
+                ),
+                child: Text(
+                  '${deck.count}',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
               ),
             ),
             if (crownColor != null)
@@ -826,53 +948,6 @@ Future<void> confirmAndDig(
               style: const TextStyle(color: parchment)),
         ],
       ),
-    ),
-  );
-}
-
-/// [playerIndex] の手札を確認するモーダル。
-/// 自分（index 0）はおもてで、他プレイヤーは裏向きで表示する（非公開情報）。
-void showHandSheet(BuildContext context, WidgetRef ref, int playerIndex) {
-  showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: panel,
-    builder: (_) => Consumer(
-      builder: (context, ref, __) {
-        final state = ref.watch(gameProvider);
-        final player = state.players[playerIndex];
-        final self = isSelf(playerIndex);
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                self
-                    ? '${player.name} の手札（自分）  現在 ${player.score} 点'
-                    : '${player.name} の手札（非公開）',
-                style: const TextStyle(
-                  color: parchment,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (player.hand.isEmpty)
-                const Text('まだ宝石がありません。', style: TextStyle(color: parchment))
-              else
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    for (final card in player.hand)
-                      self ? HandTile(card: card) : const HandBackTile(),
-                  ],
-                ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
     ),
   );
 }
