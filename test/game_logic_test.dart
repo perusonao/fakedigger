@@ -118,15 +118,12 @@ void main() {
     });
   });
 
-  group('CPU（仮実装）', () {
+  group('pickCpuDeck（CPU仮実装）', () {
     late ProviderContainer container;
     setUp(() {
       container = ProviderContainer(
         overrides: [
-          gameProvider.overrideWith(() => GameController(
-                random: Random(1),
-                cpuThinkDelay: const Duration(milliseconds: 5),
-              )),
+          gameProvider.overrideWith(() => GameController(random: Random(1))),
         ],
       );
     });
@@ -135,31 +132,29 @@ void main() {
     GameState s() => container.read(gameProvider);
     GameController c() => container.read(gameProvider.notifier);
 
-    test('自分（0）の手番でCPUは動かない', () async {
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-      expect(s().currentPlayer, 0);
+    test('自分（index 0）の手番ではnullを返す（状態も変化しない）', () {
+      expect(c().pickCpuDeck(), isNull);
       expect(s().players.every((p) => p.hand.isEmpty), isTrue);
     });
 
-    test('自分が発掘するとCPUの手番になり、待つと自動で発掘して手番が進む', () async {
-      c().dig(0);
+    test('CPUの手番では空でない山札のインデックスを返し、状態は変化しない', () {
+      c().dig(0); // 自分が発掘 → 手番はCPU(1)へ。
       expect(s().currentPlayer, 1);
+
+      final picked = c().pickCpuDeck();
+      expect(picked, isNotNull);
+      expect(s().decks[picked!].isEmpty, isFalse);
+      // pickCpuDeckは選ぶだけで、山札や手札は変化させない。
       expect(s().players[1].hand, isEmpty);
-
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-
-      expect(s().players[1].hand.length, 1);
-      expect(s().currentPlayer, isNot(1));
+      expect(s().currentPlayer, 1);
     });
 
-    test('リセットするとCPUの予約タイマーが取り消される', () async {
-      c().dig(0);
-      expect(s().currentPlayer, 1);
-      c().reset();
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-      // タイマーが取り消されていれば、リセット後の状態のまま変化しない。
-      expect(s().currentPlayer, 0);
-      expect(s().players.every((p) => p.hand.isEmpty), isTrue);
+    test('山札が尽きて終了していればnullを返す', () {
+      for (var i = 0; i < 5; i++) {
+        if (!s().isOver) c().dig(0);
+      }
+      expect(s().isOver, isTrue);
+      expect(c().pickCpuDeck(), isNull);
     });
   });
 }
