@@ -222,50 +222,33 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 }
 
 /// 6ブロックの一画面ダッシュボード。上部ステータスバーと下部ナビゲーションを
-/// 固定し、その間（山札・戦略カード・プレイヤー・自分の手札）をスクロールで
-/// 表示する。下部ナビゲーションの「戦略カード」タップで、戦略カードエリアまで
-/// スクロールする。
-class Dashboard extends ConsumerStatefulWidget {
+/// 固定し、その間（山札・戦略カード・プレイヤー・自分の手札）はスクロール
+/// させず、画面の高さに合わせて配分（[Expanded]の比率）して1画面に収める。
+class Dashboard extends StatelessWidget {
   const Dashboard({super.key});
-  @override
-  ConsumerState<Dashboard> createState() => _DashboardState();
-}
-
-class _DashboardState extends ConsumerState<Dashboard> {
-  final _strategyKey = GlobalKey();
-
-  void _scrollToStrategy() {
-    final ctx = _strategyKey.currentContext;
-    if (ctx == null) return;
-    Scrollable.ensureVisible(
-      ctx,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-  }
 
   @override
   Widget build(BuildContext context) => Column(
         children: [
           const StatusBar(),
           Expanded(
-            child: SingleChildScrollView(
+            child: Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const DeckArea(),
-                  const SizedBox(height: 8),
-                  KeyedSubtree(key: _strategyKey, child: const StrategyArea()),
-                  const SizedBox(height: 8),
-                  const PlayerArea(),
-                  const SizedBox(height: 8),
-                  const HandArea(),
+                children: const [
+                  Expanded(flex: 6, child: DeckArea()),
+                  SizedBox(height: 6),
+                  Expanded(flex: 4, child: StrategyArea()),
+                  SizedBox(height: 6),
+                  Expanded(flex: 2, child: PlayerArea()),
+                  SizedBox(height: 6),
+                  Expanded(flex: 3, child: HandArea()),
                 ],
               ),
             ),
           ),
-          BottomNav(onStrategyTap: _scrollToStrategy),
+          const BottomNav(),
         ],
       );
 }
@@ -386,42 +369,47 @@ class DeckArea extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            '山札エリア（DAIが見える）',
+            '山札エリア（DAIが見える・タップで選択・長押しで詳細）',
             style: TextStyle(
-                color: kBeige, fontWeight: FontWeight.bold, fontSize: 13),
+                color: kBeige, fontWeight: FontWeight.bold, fontSize: 12),
           ),
-          const SizedBox(height: 8),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              // 幅320px想定など、狭い画面では2列×4段に切り替える。
-              final narrow = constraints.maxWidth < 340;
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: narrow ? 2 : 4,
-                  childAspectRatio: narrow ? 0.85 : 0.62,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 16,
-                ),
-                itemCount: state.decks.length,
-                itemBuilder: (_, i) => DeckCard(
-                  index: i,
-                  deck: state.decks[i],
-                  canSelect: canSelect,
-                  crownColor: state.decks[i].monopolizedBy == null
-                      ? null
-                      : (state.decks[i].monopolizedBy == 0
-                          ? kSelected
-                          : kDanger),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'タップで選択・長押しで詳細',
-            style: TextStyle(color: Colors.white54, fontSize: 10),
+          const SizedBox(height: 6),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // 幅320px想定など、狭い画面では2列×4段に切り替える。
+                final narrow = constraints.maxWidth < 340;
+                final cols = narrow ? 2 : 4;
+                final rows = narrow ? 4 : 2;
+                const crossSpacing = 6.0;
+                const mainSpacing = 6.0;
+                final itemWidth =
+                    (constraints.maxWidth - crossSpacing * (cols - 1)) / cols;
+                final itemHeight =
+                    (constraints.maxHeight - mainSpacing * (rows - 1)) / rows;
+                final ratio = itemWidth / itemHeight;
+                return GridView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: cols,
+                    childAspectRatio: ratio,
+                    crossAxisSpacing: crossSpacing,
+                    mainAxisSpacing: mainSpacing,
+                  ),
+                  itemCount: state.decks.length,
+                  itemBuilder: (_, i) => DeckCard(
+                    index: i,
+                    deck: state.decks[i],
+                    canSelect: canSelect,
+                    crownColor: state.decks[i].monopolizedBy == null
+                        ? null
+                        : (state.decks[i].monopolizedBy == 0
+                            ? kSelected
+                            : kDanger),
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -494,50 +482,54 @@ class DeckCard extends ConsumerWidget {
                       ? const [BoxShadow(color: kSelected, blurRadius: 12)]
                       : const [BoxShadow(color: Colors.black87, blurRadius: 4)],
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircleAvatar(
-                      radius: 11,
-                      backgroundColor: const Color(0xff6a5e49),
-                      child: Text(
-                        '${index + 1}',
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Expanded(
-                      child: Center(
-                        child: deck.isEmpty
-                            ? const Icon(Icons.remove_circle_outline,
-                                color: Colors.black26, size: 28)
-                            : GemIcon(gem: deck.top, size: 34),
-                      ),
-                    ),
-                    if (!deck.isEmpty) ...[
-                      Wrap(
-                        spacing: 3,
-                        alignment: WrapAlignment.center,
-                        children: [
-                          for (final g in hints)
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: g.color,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: Colors.black45, width: 0.6),
-                              ),
-                            ),
-                        ],
+                // 計算した比率のセルに収まらない場合でも、はみ出さず
+                // 自動で縮小されるようFittedBoxで包む（Expandedは使わない）。
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(
+                        radius: 11,
+                        backgroundColor: const Color(0xff6a5e49),
+                        child: Text(
+                          '${index + 1}',
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 12),
+                        ),
                       ),
                       const SizedBox(height: 2),
-                    ],
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
+                      SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: Center(
+                          child: deck.isEmpty
+                              ? const Icon(Icons.remove_circle_outline,
+                                  color: Colors.black26, size: 28)
+                              : GemIcon(gem: deck.top, size: 34),
+                        ),
+                      ),
+                      if (!deck.isEmpty) ...[
+                        Wrap(
+                          spacing: 3,
+                          alignment: WrapAlignment.center,
+                          children: [
+                            for (final g in hints)
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: g.color,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: Colors.black45, width: 0.6),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                      ],
+                      Text(
                         '残り${deck.count}枚',
                         style: const TextStyle(
                           color: Colors.black,
@@ -545,8 +537,8 @@ class DeckCard extends ConsumerWidget {
                           fontSize: 11,
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               if (crownColor != null)
@@ -738,63 +730,64 @@ class _StrategyAreaState extends ConsumerState<StrategyArea> {
                     style: TextStyle(
                         color: kBeige,
                         fontWeight: FontWeight.bold,
-                        fontSize: 13),
+                        fontSize: 12),
                   ),
                 ),
-                Icon(Icons.swipe, size: 16, color: kGold),
+                Icon(Icons.swipe, size: 14, color: kGold),
                 SizedBox(width: 4),
-                Text('横にスワイプ', style: TextStyle(color: kGold, fontSize: 11)),
+                Text('横にスワイプ', style: TextStyle(color: kGold, fontSize: 10)),
               ],
             ),
-            const SizedBox(height: 8),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final visible = ((constraints.maxWidth + _spacing) /
-                        (_cardWidth + _spacing))
-                    .floor()
-                    .clamp(1, kStrategyActions.length);
-                final pageCount = (kStrategyActions.length / visible).ceil();
-                if (pageCount != _pageCount) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) setState(() => _pageCount = pageCount);
-                  });
-                }
-                return Column(
-                  children: [
-                    SizedBox(
-                      height: 168,
-                      child: ListView.separated(
-                        controller: _controller,
-                        scrollDirection: Axis.horizontal,
-                        itemCount: kStrategyActions.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(width: _spacing),
-                        itemBuilder: (_, i) => SizedBox(
-                          width: _cardWidth,
-                          child:
-                              ActionCard(index: i, data: kStrategyActions[i]),
+            const SizedBox(height: 4),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final visible = ((constraints.maxWidth + _spacing) /
+                          (_cardWidth + _spacing))
+                      .floor()
+                      .clamp(1, kStrategyActions.length);
+                  final pageCount = (kStrategyActions.length / visible).ceil();
+                  if (pageCount != _pageCount) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) setState(() => _pageCount = pageCount);
+                    });
+                  }
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: ListView.separated(
+                          controller: _controller,
+                          scrollDirection: Axis.horizontal,
+                          itemCount: kStrategyActions.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(width: _spacing),
+                          itemBuilder: (_, i) => SizedBox(
+                            width: _cardWidth,
+                            child:
+                                ActionCard(index: i, data: kStrategyActions[i]),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var i = 0; i < pageCount; i++)
-                          Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 2),
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: i == _page ? kSelected : Colors.white24,
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          for (var i = 0; i < pageCount; i++)
+                            Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 2),
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: i == _page ? kSelected : Colors.white24,
+                              ),
                             ),
-                          ),
-                      ],
-                    ),
-                  ],
-                );
-              },
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ],
         ),
@@ -893,7 +886,7 @@ class ActionCard extends ConsumerWidget {
             : null,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           decoration: BoxDecoration(
             color: actionState == ActionState.comingSoon
                 ? const Color(0xff0b141a)
@@ -951,11 +944,11 @@ class ActionCard extends ConsumerWidget {
                 Text(
                   data.description,
                   textAlign: TextAlign.center,
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 9, color: Colors.white),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
                   caption,
                   textAlign: TextAlign.center,
@@ -1038,90 +1031,93 @@ class PlayerTile extends StatelessWidget {
                 ? const [BoxShadow(color: kSelected, blurRadius: 8)]
                 : null,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (self)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: kGold,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        active ? 'あなた（手番）' : 'あなた',
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  playerAvatar(player, 18),
-                  if (active && !self)
-                    Positioned(
-                      top: -8,
-                      right: -8,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (self)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 4, vertical: 1),
                         decoration: BoxDecoration(
-                          color: kSelfTurn,
+                          color: kGold,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: const Text(
-                          '手番',
-                          style: TextStyle(
-                            color: Colors.white,
+                        child: Text(
+                          active ? 'あなた（手番）' : 'あなた',
+                          style: const TextStyle(
+                            color: Colors.black,
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
                     ),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text(
-                player.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style:
-                    const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.diamond, size: 10, color: player.target.color),
-                  const SizedBox(width: 3),
-                  Text(
-                    '手札 ${player.hand.length}',
-                    style: const TextStyle(color: kBeige, fontSize: 10),
                   ),
-                ],
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.hardware, size: 11, color: kGold),
-                  const SizedBox(width: 2),
-                  Text(
-                    '${player.workers}/${PlayerState.kWorkersPerPlayer}',
-                    style: const TextStyle(color: kGold, fontSize: 10),
-                  ),
-                ],
-              ),
-            ],
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    playerAvatar(player, 18),
+                    if (active && !self)
+                      Positioned(
+                        top: -8,
+                        right: -8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: kSelfTurn,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            '手番',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  player.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.diamond, size: 10, color: player.target.color),
+                    const SizedBox(width: 3),
+                    Text(
+                      '手札 ${player.hand.length}',
+                      style: const TextStyle(color: kBeige, fontSize: 10),
+                    ),
+                  ],
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.hardware, size: 11, color: kGold),
+                    const SizedBox(width: 2),
+                    Text(
+                      '${player.workers}/${PlayerState.kWorkersPerPlayer}',
+                      style: const TextStyle(color: kGold, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -1155,14 +1151,12 @@ class HandArea extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(height: 2),
           Text(
             '手札上限 $kHandLimit枚（到達でゲーム終了）',
             style: const TextStyle(color: Colors.white54, fontSize: 10),
           ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 100,
+          const SizedBox(height: 4),
+          Expanded(
             child: me.hand.isEmpty
                 ? const Center(
                     child: Text('まだ宝石がありません。',
@@ -1300,11 +1294,11 @@ void showHandCardDetail(
   );
 }
 
-/// 6. 下部固定ナビゲーション：戦略カード（スクロール）・ターゲット・
-/// 推理メモ・ログ。
+/// 6. 下部固定ナビゲーション：戦略カード・ターゲット・推理メモ・ログ。
+/// 戦略カードは常に画面内に表示されているため、このタブは「ここに
+/// ある」ことを示す常時強調のみで、タップ動作は持たない。
 class BottomNav extends StatelessWidget {
-  const BottomNav({required this.onStrategyTap, super.key});
-  final VoidCallback onStrategyTap;
+  const BottomNav({super.key});
 
   @override
   Widget build(BuildContext context) => Consumer(
@@ -1321,7 +1315,7 @@ class BottomNav extends StatelessWidget {
                   icon: Icons.style,
                   label: '戦略カード',
                   active: true,
-                  onTap: onStrategyTap,
+                  onTap: () {},
                 ),
                 NavItem(
                   icon: Icons.diamond,
