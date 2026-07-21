@@ -204,6 +204,30 @@ void main() {
     });
   }
 
+  // 実機でよくある縦画面の高さでも、縦スクロールなしに1画面へ収まり
+  // オーバーフローも起きないことを確認する。
+  for (final height in [568.0, 667.0, 736.0, 844.0, 926.0]) {
+    testWidgets('高さ${height.toInt()}pxでも1画面に収まる（オーバーフローなし）', (tester) async {
+      tester.view.physicalSize = Size(390, height);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(wrapGameScreen());
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      // 山札・戦略・プレイヤー・手札の各エリアが縦スクロールを介さず
+      // 直接見えている（Dashboard自体が1つのScrollableも持たない）。
+      expect(find.byType(DeckArea), findsOneWidget);
+      expect(find.byType(StrategyArea), findsOneWidget);
+      expect(find.byType(PlayerArea), findsOneWidget);
+      expect(find.byType(HandArea), findsOneWidget);
+
+      await drainTurnTimers(tester);
+    });
+  }
+
   testWidgets('タブレット幅では中央寄せの最大幅で表示される', (tester) async {
     tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1.0;
