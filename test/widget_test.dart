@@ -99,7 +99,7 @@ void main() {
     await drainTurnTimers(tester);
   });
 
-  testWidgets('下部バーには戦略カードのみ（手札・ターゲット・メモは無し）', (tester) async {
+  testWidgets('戦略ボタンは画面中央に浮き、下部エリアには手札のみ表示される', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
@@ -108,17 +108,11 @@ void main() {
         ),
       ),
     );
-    final bar = find.byType(BottomActionBar);
+    expect(find.byType(StrategyFab), findsOneWidget);
+    final bar = find.byType(HandDisplayBar);
+    expect(bar, findsOneWidget);
     expect(
       find.descendant(of: bar, matching: find.byIcon(Icons.style)),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: bar, matching: find.byIcon(Icons.back_hand)),
-      findsNothing,
-    );
-    expect(
-      find.descendant(of: bar, matching: find.byIcon(Icons.diamond)),
       findsNothing,
     );
     expect(
@@ -143,7 +137,7 @@ void main() {
     await drainTurnTimers(tester);
   });
 
-  testWidgets('プレイヤーをタップすると手札モーダル。自分はおもて、他は裏', (tester) async {
+  testWidgets('プレイヤーをタップすると下部の手札表示が切り替わる。自分はおもて、他は裏', (tester) async {
     tester.view.physicalSize = const Size(450, 1800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -151,9 +145,9 @@ void main() {
 
     final container = ProviderContainer();
     addTearDown(container.dispose);
-    // このテストは手札モーダルの表裏だけを検証するため、GameScreenの
-    // 自動ターン進行（戦略モーダル自動オープン等）に依存しないDashboardを
-    // 直接使う。
+    // このテストは下部の手札表示エリアの表裏切り替えだけを検証するため、
+    // GameScreenの自動ターン進行（戦略モーダル自動オープン等）に依存しない
+    // Dashboardを直接使う。
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
@@ -168,28 +162,47 @@ void main() {
     container.read(gameProvider.notifier).dig(0);
     await tester.pump();
 
+    final bar = find.byType(HandDisplayBar);
+    // 既定では自分（index 0）の手札がおもてで表示されている。
+    expect(
+      find.descendant(of: bar, matching: find.byType(HandTile)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: bar, matching: find.byType(HandBackTile)),
+      findsNothing,
+    );
+
     final tiles = find.byType(PlayerTile);
     expect(tiles, findsNWidgets(4));
 
-    // 自分（先頭）のアイコンをタップ → おもて（HandTile）が見える。
-    await tester.ensureVisible(tiles.at(0));
-    await tester.tap(tiles.at(0));
+    // 他プレイヤーのアイコンをタップ → 下部エリアが裏向き（HandBackTile）に切り替わる。
+    await tester.ensureVisible(tiles.at(1));
+    await tester.tap(tiles.at(1));
     // 手番でないプレイヤーの「考え中」スピナーが無限アニメーションのため、
     // pumpAndSettle() は使わず一定時間だけ進める。
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byType(HandTile), findsOneWidget);
-    expect(find.byType(HandBackTile), findsNothing);
-    Navigator.of(tester.element(find.byType(HandTile))).pop();
-    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      find.descendant(of: bar, matching: find.byType(HandBackTile)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: bar, matching: find.byType(HandTile)),
+      findsNothing,
+    );
 
-    // 他プレイヤーのアイコンをタップ → 裏向き（HandBackTile）のみ。
-    await tester.ensureVisible(tiles.at(1));
-    await tester.tap(tiles.at(1));
+    // 自分のアイコンをタップ → おもて（HandTile）に戻る。
+    await tester.ensureVisible(tiles.at(0));
+    await tester.tap(tiles.at(0));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byType(HandBackTile), findsOneWidget);
-    expect(find.byType(HandTile), findsNothing);
-    Navigator.of(tester.element(find.byType(HandBackTile))).pop();
-    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      find.descendant(of: bar, matching: find.byType(HandTile)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: bar, matching: find.byType(HandBackTile)),
+      findsNothing,
+    );
   });
 
   testWidgets('戦略カード一覧を開くとスワイプなしで10枚すべて確認できる', (tester) async {
