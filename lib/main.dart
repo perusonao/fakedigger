@@ -243,29 +243,73 @@ class PortraitDashboard extends ConsumerWidget {
   const PortraitDashboard({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(gameProvider);
-    return Column(
+    return const Column(
       children: [
-        const PlayerBar(),
+        PlayerBar(),
+        // 盤面（山札）を主役として最大化。戦略カード・手札・ターゲット・メモは
+        // 下部バーからモーダルで開く。
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
+            padding: EdgeInsets.fromLTRB(8, 8, 8, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const StatusBar(),
-                const SizedBox(height: 8),
-                // 山札を全幅で大きく見せる（主役）。
-                const BoardPanel(),
-                const SizedBox(height: 10),
-                const StrategyStrip(),
-                const SizedBox(height: 10),
-                HandStrip(player: state.players[state.currentPlayer]),
+                StatusBar(),
+                SizedBox(height: 8),
+                BoardPanel(),
               ],
             ),
           ),
         ),
+        BottomActionBar(),
       ],
+    );
+  }
+}
+
+/// 下部固定バー。戦略カード・手札・ターゲット・メモをモーダルで開く。
+/// 手札は枚数を常時表示（6枚で終了する重要情報のため）。
+class BottomActionBar extends ConsumerWidget {
+  const BottomActionBar({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hand = ref.watch(
+      gameProvider.select((s) => s.players[s.currentPlayer].hand.length),
+    );
+    Widget item(IconData icon, String label, VoidCallback onTap) => Expanded(
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, color: gold, size: 22),
+                  const SizedBox(height: 2),
+                  Text(label,
+                      style: const TextStyle(color: parchment, fontSize: 11)),
+                ],
+              ),
+            ),
+          ),
+        );
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xff050a0d),
+        border: Border(top: BorderSide(color: gold)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            item(Icons.style, '戦略カード', () => showStrategySheet(context, ref)),
+            item(Icons.back_hand, '手札 $hand/$kHandLimit',
+                () => showHandSheet(context, ref)),
+            item(Icons.diamond, 'ターゲット', () => showTargetSheet(context, ref)),
+            item(Icons.edit_note, 'メモ', () => showMemoSheet(context, ref)),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -540,125 +584,6 @@ class StrategyStrip extends StatelessWidget {
       );
 }
 
-/// 自分（手番プレイヤー）の手札を常時表示。裏向き→タップでおもて。
-class HandStrip extends ConsumerWidget {
-  const HandStrip({required this.player, super.key});
-  final PlayerState player;
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final revealed = ref.watch(revealedHandProvider);
-    return GoldPanel(
-      padding: const EdgeInsets.all(8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${player.name} の手札（タップで確認）',
-                  style: const TextStyle(
-                      color: parchment, fontWeight: FontWeight.bold),
-                ),
-              ),
-              Text(
-                '${player.hand.length}/$kHandLimit枚',
-                style:
-                    const TextStyle(color: gold, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 96,
-            child: player.hand.isEmpty
-                ? const Center(
-                    child: Text('まだ宝石がありません。山札を発掘しましょう。',
-                        style: TextStyle(color: parchment)),
-                  )
-                : ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: player.hand.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (_, i) => HandFace(
-                      card: player.hand[i],
-                      revealed: revealed.contains(i),
-                      onTap: () {
-                        final set = {...ref.read(revealedHandProvider)};
-                        set.contains(i) ? set.remove(i) : set.add(i);
-                        ref.read(revealedHandProvider.notifier).state = set;
-                      },
-                    ),
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 手札1枚。裏面はエンブレム、おもては宝石色＋色名。
-class HandFace extends StatelessWidget {
-  const HandFace({
-    required this.card,
-    required this.revealed,
-    required this.onTap,
-    super.key,
-  });
-  final HandCard card;
-  final bool revealed;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(7),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          width: 64,
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: revealed ? parchment : const Color(0xff10151d),
-            borderRadius: BorderRadius.circular(7),
-            border: Border.all(color: gold, width: revealed ? 2 : 1),
-          ),
-          child: revealed
-              ? Column(
-                  children: [
-                    Align(
-                      alignment: Alignment.topRight,
-                      child: card.doubled
-                          ? const Text('×2',
-                              style: TextStyle(
-                                  color: Colors.red,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold))
-                          : const SizedBox(height: 13),
-                    ),
-                    Expanded(
-                      child: Center(
-                        child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            color: card.gem.color,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.black),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Text(card.gem.label,
-                        style: const TextStyle(
-                            color: Colors.black, fontWeight: FontWeight.bold)),
-                  ],
-                )
-              : const Center(
-                  child: Icon(Icons.diamond, color: gold, size: 30),
-                ),
-        ),
-      );
-}
-
 /// 現在の手番プレイヤーの手札を本人だけが確認するモーダル。
 void showHandSheet(BuildContext context, WidgetRef ref) {
   showModalBottomSheet<void>(
@@ -775,6 +700,18 @@ void showMemoSheet(BuildContext context, WidgetRef ref) {
           ),
         ],
       ),
+    ),
+  );
+}
+
+/// 戦略カード一覧をモーダルで開く（横スクロールの一覧を再利用）。
+void showStrategySheet(BuildContext context, WidgetRef ref) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: panel,
+    builder: (_) => const Padding(
+      padding: EdgeInsets.all(12),
+      child: StrategyStrip(),
     ),
   );
 }
