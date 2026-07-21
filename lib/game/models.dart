@@ -34,12 +34,21 @@ extension GemInfo on Gem {
 /// 得点が2倍になるため、その状態を [doubled] で持つ。
 @immutable
 class HandCard {
-  const HandCard(this.gem, {this.doubled = false, this.protected = false});
+  const HandCard(
+    this.gem, {
+    this.doubled = false,
+    this.protected = false,
+    this.revealedToSelf = false,
+  });
   final Gem gem;
   final bool doubled;
 
   /// 「保護」戦略の対象になっているか（他プレイヤーの効果を受けない）。
   final bool protected;
+
+  /// 自分（index 0）が「鑑定」でこのカードを見たことがあるか。
+  /// 自分自身の手札では常に無関係（自分のカードは常に見える）。
+  final bool revealedToSelf;
 }
 
 /// 山札。5枚ずつ8個で開始する。先頭 [top] が「1番上」。
