@@ -34,9 +34,12 @@ extension GemInfo on Gem {
 /// 得点が2倍になるため、その状態を [doubled] で持つ。
 @immutable
 class HandCard {
-  const HandCard(this.gem, {this.doubled = false});
+  const HandCard(this.gem, {this.doubled = false, this.protected = false});
   final Gem gem;
   final bool doubled;
+
+  /// 「保護」戦略の対象になっているか（他プレイヤーの効果を受けない）。
+  final bool protected;
 }
 
 /// 山札。5枚ずつ8個で開始する。先頭 [top] が「1番上」。
@@ -152,6 +155,7 @@ class GameState {
     required this.currentPlayer,
     this.phase = GamePhase.playing,
     this.endReason,
+    this.log = const [],
   });
 
   final List<Deck> decks;
@@ -161,6 +165,9 @@ class GameState {
   final int currentPlayer;
   final GamePhase phase;
   final String? endReason;
+
+  /// 誰が何をしたかの簡易な履歴（新しい順ではなく発生順）。
+  final List<String> log;
 
   bool get isOver => phase == GamePhase.ended;
 
@@ -172,6 +179,7 @@ class GameState {
     int? currentPlayer,
     GamePhase? phase,
     String? endReason,
+    List<String>? log,
   }) =>
       GameState(
         decks: decks ?? this.decks,
@@ -181,6 +189,7 @@ class GameState {
         currentPlayer: currentPlayer ?? this.currentPlayer,
         phase: phase ?? this.phase,
         endReason: endReason ?? this.endReason,
+        log: log ?? this.log,
       );
 
   /// スコア降順で並べた (プレイヤー, 元インデックス) のランキング。

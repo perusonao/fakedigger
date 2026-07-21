@@ -109,8 +109,9 @@ class GameController extends Notifier<GameState> {
         hand: [...player.hand, HandCard(gem, doubled: wasLast)],
         workers: player.workers - 1,
       );
+    final log = [...state.log, '${player.name} が山札${deckIndex + 1}を発掘した'];
 
-    state = state.copyWith(decks: decks, players: players);
+    state = state.copyWith(decks: decks, players: players, log: log);
     _checkEnd();
     if (!state.isOver) _advanceTurn();
   }
@@ -172,11 +173,13 @@ class GameController extends Notifier<GameState> {
         p.copyWith(workers: PlayerState.kWorkersPerPlayer),
     ];
     final nextStart = (state.startPlayer + 1) % state.players.length;
+    final nextRound = state.round + 1;
     state = state.copyWith(
       players: players,
-      round: state.round + 1,
+      round: nextRound,
       startPlayer: nextStart,
       currentPlayer: nextStart,
+      log: [...state.log, 'ラウンド$nextRoundが始まった'],
     );
   }
 
