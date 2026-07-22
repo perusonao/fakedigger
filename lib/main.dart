@@ -40,6 +40,69 @@ final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 /// プレイヤー一覧の先頭（index 0）が、このデバイスを操作する「自分」。
 bool isSelf(int index) => index == 0;
 
+/// 発掘演出（山札→手札へ飛ぶアニメーション）で位置を取得するための
+/// 山札カードごとのキー。山札の数は対局中変わらないため使い回す。
+final _deckCardKeys = <int, GlobalKey>{};
+GlobalKey deckCardKey(int index) =>
+    _deckCardKeys.putIfAbsent(index, () => GlobalKey());
+
+/// 同じ演出のための、自分の手札エリア（着地点）の位置を取得するキー。
+final handAreaGlobalKey = GlobalKey();
+
+/// 発掘した宝石が山札から手札エリアへ飛ぶ演出。位置が取得できない
+/// （まだ描画されていない等）場合は何もしない。
+void flyCardToHand(
+  BuildContext context, {
+  required int deckIndex,
+  required Gem gem,
+}) {
+  final overlay = Overlay.maybeOf(context, rootOverlay: true);
+  final startBox =
+      deckCardKey(deckIndex).currentContext?.findRenderObject() as RenderBox?;
+  final endBox =
+      handAreaGlobalKey.currentContext?.findRenderObject() as RenderBox?;
+  if (overlay == null || startBox == null || endBox == null) return;
+  final overlayBox = overlay.context.findRenderObject()! as RenderBox;
+  final start = startBox.localToGlobal(
+    startBox.size.center(Offset.zero),
+    ancestor: overlayBox,
+  );
+  final end = endBox.localToGlobal(
+    Offset(endBox.size.width / 2, endBox.size.height / 2),
+    ancestor: overlayBox,
+  );
+
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
+    // OverlayのStackに正しく位置指定させるため、PositionedはStackの
+    // 直接の子として返す必要がある（TweenAnimationBuilder自体は
+    // RenderObjectWidgetでなく透過的なので、その内側で組み立ててよい）。
+    builder: (_) => TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeInOut,
+      onEnd: () => entry.remove(),
+      builder: (_, t, __) {
+        final pos = Offset.lerp(start, end, t)!;
+        return Positioned(
+          left: pos.dx - 16,
+          top: pos.dy - 16,
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: 1 - t * 0.2,
+              child: Transform.scale(
+                scale: 1 - 0.35 * t,
+                child: GemIcon(gem: gem, size: 32),
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  );
+  overlay.insert(entry);
+}
+
 /// プレイヤーの立ち絵（画像があれば画像、なければ文字）を丸く表示する。
 Widget playerAvatar(PlayerState p, double radius) => CircleAvatar(
       radius: radius,
@@ -136,6 +199,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
     final name = state.players[player].name;
     controller.dig(deckIndex);
+    final drawnGem = ref.read(gameProvider).players[player].hand.last.gem;
+    if (mounted) flyCardToHand(context, deckIndex: deckIndex, gem: drawnGem);
     scaffoldMessengerKey.currentState?.showSnackBar(
       SnackBar(
         duration: const Duration(milliseconds: 1400),
@@ -240,16 +305,16 @@ class Dashboard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(6, 6, 6, 3),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: const [
+                children: [
                   // 山札を主役として画面の約6割を割り当てる
                   // （山札:戦略:プレイヤー:手札 ≒ 420:130:80:110）。
-                  Expanded(flex: 42, child: DeckArea()),
-                  SizedBox(height: 4),
-                  Expanded(flex: 13, child: StrategyArea()),
-                  SizedBox(height: 4),
-                  Expanded(flex: 8, child: PlayerArea()),
-                  SizedBox(height: 4),
-                  Expanded(flex: 11, child: HandArea()),
+                  const Expanded(flex: 42, child: DeckArea()),
+                  const SizedBox(height: 4),
+                  const Expanded(flex: 13, child: StrategyArea()),
+                  const SizedBox(height: 4),
+                  const Expanded(flex: 8, child: PlayerArea()),
+                  const SizedBox(height: 4),
+                  Expanded(flex: 11, child: HandArea(key: handAreaGlobalKey)),
                 ],
               ),
             ),
@@ -436,13 +501,14 @@ class _DeckCardState extends ConsumerState<DeckCard> {
       selected: selected,
       label: '山札${index + 1}、${deck.count}枚',
       child: GestureDetector(
+        key: deckCardKey(index),
         onLongPressStart: (_) => _setLifted(true),
         onLongPress: () => showDeckDetailDialog(context, ref, index),
         onLongPressEnd: (_) => _setLifted(false),
         onLongPressCancel: () => _setLifted(false),
         child: InkWell(
           onTap: enabled ? () => onDeckTap(context, ref, index) : null,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(9),
           child: AnimatedScale(
             scale: _lifted ? 1.08 : 1.0,
             duration: const Duration(milliseconds: 120),
@@ -450,7 +516,7 @@ class _DeckCardState extends ConsumerState<DeckCard> {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // 背面に3枚重ねて、山札らしい厚みを出す。
+                // 背面に3枚重ねて、影を付けた本物のカード束のような厚みを出す。
                 if (!deck.isEmpty)
                   for (var i = 3; i >= 1; i--)
                     Positioned(
@@ -460,10 +526,20 @@ class _DeckCardState extends ConsumerState<DeckCard> {
                       bottom: -i * 4.0,
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: kBeige.withValues(alpha: 0.75 - i * 0.1),
-                          borderRadius: BorderRadius.circular(7),
+                          color: Color.alphaBlend(
+                            Colors.black.withValues(alpha: i * 0.2),
+                            const Color(0xff1c2b35),
+                          ),
+                          borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                              color: const Color(0xff9a8a63), width: 1.4),
+                              color: const Color(0xff5a4a2a), width: 1.2),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black54,
+                              blurRadius: 5,
+                              offset: Offset(1, 3),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -472,23 +548,28 @@ class _DeckCardState extends ConsumerState<DeckCard> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                   decoration: BoxDecoration(
-                    color: deck.isEmpty ? const Color(0xffcfc6ac) : kBeige,
-                    borderRadius: BorderRadius.circular(7),
+                    gradient: deck.isEmpty
+                        ? null
+                        : const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0xff223140), Color(0xff0c141a)],
+                          ),
+                    color: deck.isEmpty ? const Color(0xff2a2f33) : null,
+                    borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: selected
                           ? kSelected
-                          : (enabled
-                              ? const Color(0xff8a6d3c)
-                              : Colors.black26),
+                          : (enabled ? kGold : Colors.white24),
                       width: selected ? 3 : 2,
                     ),
                     boxShadow: selected
-                        ? const [BoxShadow(color: kSelected, blurRadius: 12)]
+                        ? const [BoxShadow(color: kSelected, blurRadius: 14)]
                         : [
                             BoxShadow(
-                              color: Colors.black87,
-                              blurRadius: _lifted ? 10 : 4,
-                              offset: Offset(0, _lifted ? 4 : 1),
+                              color: Colors.black,
+                              blurRadius: _lifted ? 16 : 8,
+                              offset: Offset(0, _lifted ? 6 : 3),
                             ),
                           ],
                   ),
@@ -500,58 +581,58 @@ class _DeckCardState extends ConsumerState<DeckCard> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         CircleAvatar(
-                          radius: 15,
-                          backgroundColor: const Color(0xff6a5e49),
+                          radius: 14,
+                          backgroundColor: kGold,
                           child: Text(
                             '${index + 1}',
                             style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
+                                color: Colors.black,
+                                fontSize: 15,
                                 fontWeight: FontWeight.bold),
                           ),
                         ),
-                        const SizedBox(height: 5),
+                        const SizedBox(height: 6),
                         SizedBox(
-                          width: 58,
-                          height: 58,
+                          width: 60,
+                          height: 60,
                           child: Center(
                             child: deck.isEmpty
                                 ? const Icon(Icons.remove_circle_outline,
-                                    color: Colors.black26, size: 40)
-                                : GemIcon(gem: deck.top, size: 50),
+                                    color: Colors.white24, size: 40)
+                                : DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: RadialGradient(
+                                        colors: [
+                                          deck.top.color
+                                              .withValues(alpha: 0.35),
+                                          Colors.transparent,
+                                        ],
+                                      ),
+                                    ),
+                                    child: Center(
+                                      child: GemIcon(gem: deck.top, size: 48),
+                                    ),
+                                  ),
                           ),
                         ),
                         if (!deck.isEmpty) ...[
                           const SizedBox(height: 4),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
+                          Wrap(
+                            spacing: 3,
+                            alignment: WrapAlignment.center,
                             children: [
-                              const Text(
-                                'DAI',
-                                style: TextStyle(
-                                  color: Colors.black54,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.bold,
+                              for (final g in hints)
+                                Container(
+                                  width: 9,
+                                  height: 9,
+                                  decoration: BoxDecoration(
+                                    color: g.color,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: Colors.black54, width: 0.6),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 3),
-                              Wrap(
-                                spacing: 3,
-                                alignment: WrapAlignment.center,
-                                children: [
-                                  for (final g in hints)
-                                    Container(
-                                      width: 10,
-                                      height: 10,
-                                      decoration: BoxDecoration(
-                                        color: g.color,
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                            color: Colors.black45, width: 0.6),
-                                      ),
-                                    ),
-                                ],
-                              ),
                             ],
                           ),
                           const SizedBox(height: 3),
@@ -559,7 +640,7 @@ class _DeckCardState extends ConsumerState<DeckCard> {
                         Text(
                           '残り${deck.count}枚',
                           style: const TextStyle(
-                            color: Colors.black,
+                            color: kBeige,
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
                           ),
@@ -690,6 +771,7 @@ Future<void> confirmAndDig(
   ref.read(selectedActionProvider.notifier).state = null;
 
   final card = ref.read(gameProvider).players[0].hand.last;
+  if (context.mounted) flyCardToHand(context, deckIndex: index, gem: card.gem);
   scaffoldMessengerKey.currentState?.showSnackBar(
     SnackBar(
       duration: const Duration(milliseconds: 1400),
@@ -887,16 +969,11 @@ class ActionCard extends ConsumerWidget {
       ActionState.insufficientWorkers => notMyTurn ? '手番ではありません' : 'ワーカー不足',
       ActionState.usable || ActionState.selected => '何度でも使用可',
     };
-    final captionColor = switch (actionState) {
-      ActionState.comingSoon => kGold,
-      ActionState.used || ActionState.insufficientWorkers => Colors.white54,
-      ActionState.usable || ActionState.selected => kSelected,
-    };
-
     return Semantics(
       button: true,
       enabled: tappable,
       selected: actionState == ActionState.selected,
+      label: '${data.title}、コスト${data.cost}、$caption',
       child: GestureDetector(
         onLongPress: () => showActionDetailDialog(context, data),
         child: InkWell(
@@ -940,8 +1017,9 @@ class ActionCard extends ConsumerWidget {
                 ActionState.used || ActionState.insufficientWorkers => 0.6,
                 ActionState.usable || ActionState.selected => 1,
               },
-              // ゲーム中はアイコン・カード名・コスト・使用状態だけで十分。
-              // 説明文と挿絵はshowActionDetailDialog（長押し）に譲り、
+              // ゲーム中は大きいアイコン・カード名・コストだけで十分。
+              // 使用可否は枠線の色と不透明度で示し、説明文・挿絵・状態文言は
+              // showActionDetailDialog（長押し）とSemanticsラベルに譲って
               // カードの高さを大きく抑える。狭い画面でも収まるよう
               // FittedBoxで包む（Expandedは使わない）。
               child: FittedBox(
@@ -950,19 +1028,14 @@ class ActionCard extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(data.icon, size: 14, color: kGold),
-                        const SizedBox(width: 4),
-                        Text(
-                          data.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.bold),
-                        ),
-                      ],
+                    Icon(data.icon, size: 26, color: kGold),
+                    const SizedBox(height: 3),
+                    Text(
+                      data.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 3),
                     CircleAvatar(
@@ -974,18 +1047,6 @@ class ActionCard extends ConsumerWidget {
                             color: kGold,
                             fontSize: 10,
                             fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      caption,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: captionColor,
-                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ],
@@ -1141,7 +1202,7 @@ class PlayerTile extends StatelessWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      playerAvatar(player, 10),
+                      playerAvatar(player, 13),
                       const SizedBox(width: 3),
                       Text(
                         player.name,
@@ -1416,9 +1477,8 @@ void showHandCardDetail(
   );
 }
 
-/// 6. 下部固定ナビゲーション：戦略カード・ターゲット・推理メモ・ログ。
-/// 戦略カードは常に画面内に表示されているため、このタブは「ここに
-/// ある」ことを示す常時強調のみで、タップ動作は持たない。
+/// 6. 下部固定ナビゲーション：ターゲット・推理メモ・ログ・メニュー。
+/// 戦略カードは常に画面内に表示されているため、ここには置かない。
 class BottomNav extends StatelessWidget {
   const BottomNav({super.key});
 
@@ -1433,12 +1493,6 @@ class BottomNav extends StatelessWidget {
             top: false,
             child: Row(
               children: [
-                NavItem(
-                  icon: Icons.style,
-                  label: '戦略カード',
-                  active: true,
-                  onTap: () {},
-                ),
                 NavItem(
                   icon: Icons.diamond,
                   label: 'ターゲット',
@@ -1456,6 +1510,12 @@ class BottomNav extends StatelessWidget {
                   label: 'ログ',
                   active: false,
                   onTap: () => showLogSheet(context, ref),
+                ),
+                NavItem(
+                  icon: Icons.settings,
+                  label: 'メニュー',
+                  active: false,
+                  onTap: () => showMenuSheet(context, ref),
                 ),
               ],
             ),
